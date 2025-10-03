@@ -1,9 +1,9 @@
-% ¼ÆËãÎ»ÒÆº¯Êı - ¸Ä½ø°æ±¾£¬¿¼ÂÇÖØÁ¦¼ÓËÙ¶ÈÓ°ÏìºÍÁãËÙ¶È¼ì²â
+% è®¡ç®—ä½ç§»å‡½æ•° - æ”¹è¿›ç‰ˆæœ¬ï¼Œè€ƒè™‘é‡åŠ›åŠ é€Ÿåº¦å½±å“å’Œé›¶é€Ÿåº¦æ£€æµ‹
 function [dx, dy, dz] = calculateDisplacement(accelX, accelY, accelZ, gyroX, gyroY, gyroZ, pitchAngles, rollAngles, dt, accel_range, gyro_range, window_count)
-    % µØÇòÖØÁ¦¼ÓËÙ¶È²Î¿¼Öµ (m/s?)
+    % åœ°çƒé‡åŠ›åŠ é€Ÿåº¦å‚è€ƒå€¼ (m/sÂ²)
     G = 9.80665;
     
-    % ½«¼ÓËÙ¶ÈÊı¾İ×ª»»ÎªGµ¥Î»£¬È»ºó×ª»»Îªm/s?
+    % å°†åŠ é€Ÿåº¦æ•°æ®è½¬æ¢ä¸ºGå•ä½ï¼Œç„¶åè½¬æ¢ä¸ºm/sÂ²
     accelX_g = (accelX / 32768) * accel_range;
     accelY_g = (accelY / 32768) * accel_range;
     accelZ_g = (accelZ / 32768) * accel_range;
@@ -12,26 +12,26 @@ function [dx, dy, dz] = calculateDisplacement(accelX, accelY, accelZ, gyroX, gyr
     accelY_mps2 = accelY_g * G;
     accelZ_mps2 = accelZ_g * G;
     
-    % ½«ÍÓÂİÒÇÊı¾İ×ª»»Îª¶È/Ãë
+    % å°†é™€èºä»ªæ•°æ®è½¬æ¢ä¸ºåº¦/ç§’
     gyroX_dps = (gyroX / 32768) * gyro_range;
     gyroY_dps = (gyroY / 32768) * gyro_range;
     gyroZ_dps = (gyroZ / 32768) * gyro_range;
     
-    % ½«½Ç¶È×ª»»Îª»¡¶È
+    % å°†è§’åº¦è½¬æ¢ä¸ºå¼§åº¦
     pitchRad = pitchAngles * pi/180;
     rollRad = rollAngles * pi/180;
     
-    % ³õÊ¼»¯ÏßĞÔ¼ÓËÙ¶ÈÊı×é
+    % åˆå§‹åŒ–çº¿æ€§åŠ é€Ÿåº¦æ•°ç»„
     linearAccelX = zeros(size(accelX_mps2));
     linearAccelY = zeros(size(accelY_mps2));
     linearAccelZ = zeros(size(accelZ_mps2));
     
-    % ÁãËÙ¶È¼ì²â±êÖ¾
+    % é›¶é€Ÿåº¦æ£€æµ‹æ ‡å¿—
     stationary = false(size(accelX_mps2));
     
-    % ¶ÔÃ¿¸ö²ÉÑùµã´¦Àí
+    % å¯¹æ¯ä¸ªé‡‡æ ·ç‚¹å¤„ç†
     for i = 1:length(accelX_mps2)
-        % ¼ÆËãĞı×ª¾ØÕó£¨´ÓÊÀ½ç×ø±êÏµµ½´«¸ĞÆ÷×ø±êÏµ£©
+        % è®¡ç®—æ—‹è½¬çŸ©é˜µï¼ˆä»ä¸–ç•Œåæ ‡ç³»åˆ°ä¼ æ„Ÿå™¨åæ ‡ç³»ï¼‰
         R_x = [1, 0, 0;
                0, cos(rollRad(i)), -sin(rollRad(i));
                0, sin(rollRad(i)), cos(rollRad(i))];
@@ -40,41 +40,41 @@ function [dx, dy, dz] = calculateDisplacement(accelX, accelY, accelZ, gyroX, gyr
                0, 1, 0;
                -sin(pitchRad(i)), 0, cos(pitchRad(i))];
            
-        % ×éºÏĞı×ª¾ØÕó
-        R_ws = R_x * R_y; % ÏÈ¸©Ñöºó¹ö×ª
+        % ç»„åˆæ—‹è½¬çŸ©é˜µ
+        R_ws = R_x * R_y; % å…ˆä¿¯ä»°åæ»šè½¬
         
-        % ÊÀ½ç×ø±êÏµÖĞµÄÖØÁ¦ÏòÁ¿ [0; 0; -G] (ZÖáÏòÉÏ)
+        % ä¸–ç•Œåæ ‡ç³»ä¸­çš„é‡åŠ›å‘é‡ [0; 0; -G] (Zè½´å‘ä¸Š)
         gravity_world = [0; 0; -G];
         
-        % ½«ÖØÁ¦ÏòÁ¿Ğı×ªµ½´«¸ĞÆ÷×ø±êÏµ
+        % å°†é‡åŠ›å‘é‡æ—‹è½¬åˆ°ä¼ æ„Ÿå™¨åæ ‡ç³»
         gravity_sensor = R_ws * gravity_world;
         
-        % ´Ó´«¸ĞÆ÷¶ÁÊıÖĞ¼õÈ¥ÖØÁ¦·ÖÁ¿
+        % ä»ä¼ æ„Ÿå™¨è¯»æ•°ä¸­å‡å»é‡åŠ›åˆ†é‡
         linearAccelSensor = [accelX_mps2(i); accelY_mps2(i); accelZ_mps2(i)] - gravity_sensor;
         
-        % ½«ÏßĞÔ¼ÓËÙ¶È´Ó´«¸ĞÆ÷×ø±êÏµĞı×ª»ØÊÀ½ç×ø±êÏµ
+        % å°†çº¿æ€§åŠ é€Ÿåº¦ä»ä¼ æ„Ÿå™¨åæ ‡ç³»æ—‹è½¬å›ä¸–ç•Œåæ ‡ç³»
         linearAccelWorld = R_ws' * linearAccelSensor;
         
-        % ´æ´¢ÏßĞÔ¼ÓËÙ¶È
+        % å­˜å‚¨çº¿æ€§åŠ é€Ÿåº¦
         linearAccelX(i) = linearAccelWorld(1);
         linearAccelY(i) = linearAccelWorld(2);
         linearAccelZ(i) = linearAccelWorld(3);
         
-        % ÁãËÙ¶È¼ì²â
+        % é›¶é€Ÿåº¦æ£€æµ‹
         accelNorm = sqrt(accelX_mps2(i)^2 + accelY_mps2(i)^2 + accelZ_mps2(i)^2);
         gyroNorm = sqrt(gyroX_dps(i)^2 + gyroY_dps(i)^2 + gyroZ_dps(i)^2);
         
-        % ¼ì²éÊÇ·ñ¾²Ö¹£¨¼ÓËÙ¶ÈÄ£½Ó½üG£¬½ÇËÙ¶ÈÄ£½Ó½ü0£©
+        % æ£€æŸ¥æ˜¯å¦é™æ­¢ï¼ˆåŠ é€Ÿåº¦æ¨¡æ¥è¿‘Gï¼Œè§’é€Ÿåº¦æ¨¡æ¥è¿‘0ï¼‰
         if abs(accelNorm - G) < 0.2 && gyroNorm < 2
             stationary(i) = true;
-            % Èç¹ûÊÇ¾²Ö¹µã£¬Ôò½«ÏßĞÔ¼ÓËÙ¶ÈÖÃÁã
+            % å¦‚æœæ˜¯é™æ­¢ç‚¹ï¼Œåˆ™å°†çº¿æ€§åŠ é€Ÿåº¦ç½®é›¶
             linearAccelX(i) = 0;
             linearAccelY(i) = 0;
             linearAccelZ(i) = 0;
         end
     end
     
-    % ÔÚÃ¿¸ö´°¿Ú¿ªÊ¼Ê±£¬¼õÈ¥³õÊ¼Æ«ÖÃ£¨Ç°¼¸¸öµãµÄÆ½¾ùÖµ£©
+    % åœ¨æ¯ä¸ªçª—å£å¼€å§‹æ—¶ï¼Œå‡å»åˆå§‹åç½®ï¼ˆå‰å‡ ä¸ªç‚¹çš„å¹³å‡å€¼ï¼‰
     if length(linearAccelX) > 5
         initial_bias_X = mean(linearAccelX(1:5));
         initial_bias_Y = mean(linearAccelY(1:5));
@@ -89,32 +89,30 @@ function [dx, dy, dz] = calculateDisplacement(accelX, accelY, accelZ, gyroX, gyr
     linearAccelY = linearAccelY - initial_bias_Y;
     linearAccelZ = linearAccelZ - initial_bias_Z;
     
-    % Ó¦ÓÃ¸ßÍ¨ÂË²¨Æ÷È¥³ıÖ±Á÷·ÖÁ¿ºÍµÍÆµÔëÉù
-    % Ê¹ÓÃ³Ö¾Ã±äÁ¿À´±£³ÖÂË²¨Æ÷×´Ì¬£¬µ«Ã¿¸ö´°¿ÚÖØÖÃ
+    % ä½¿ç”¨æŒä¹…å˜é‡æ¥ä¿æŒæ»¤æ³¢å™¨çŠ¶æ€ï¼Œä½†æ¯ä¸ªçª—å£é‡ç½®
     persistent prev_window_count prev_filteredAccelX prev_filteredAccelY prev_filteredAccelZ;
     
-    % ¼ì²éÊÇ·ñÊÇĞÂµÄ´°¿Ú
+    % æ£€æŸ¥æ˜¯å¦æ˜¯æ–°çš„çª—å£
     if isempty(prev_window_count) || prev_window_count ~= window_count
-        % ĞÂ´°¿Ú£¬ÖØÖÃÂË²¨Æ÷×´Ì¬
+        % æ–°çª—å£ï¼Œé‡ç½®æ»¤æ³¢å™¨çŠ¶æ€
         prev_filteredAccelX = 0;
         prev_filteredAccelY = 0;
         prev_filteredAccelZ = 0;
         prev_window_count = window_count;
     end
     
-    % Ó¦ÓÃ¸ßÍ¨ÂË²¨Æ÷
-    alpha = 0.95; % ÂË²¨ÏµÊı
-    [filteredAccelX, prev_filteredAccelX] = improvedHighPassFilter(linearAccelX, alpha, dt, prev_filteredAccelX);
-    [filteredAccelY, prev_filteredAccelY] = improvedHighPassFilter(linearAccelY, alpha, dt, prev_filteredAccelY);
-    [filteredAccelZ, prev_filteredAccelZ] = improvedHighPassFilter(linearAccelZ, alpha, dt, prev_filteredAccelZ);
+    % åº”ç”¨é«˜é€šæ»¤æ³¢å™¨ - ä¿®æ­£å‚æ•°è°ƒç”¨
+    [filteredAccelX, prev_filteredAccelX] = improvedHighPassFilter(linearAccelX, prev_filteredAccelX, dt);
+    [filteredAccelY, prev_filteredAccelY] = improvedHighPassFilter(linearAccelY, prev_filteredAccelY, dt);
+    [filteredAccelZ, prev_filteredAccelZ] = improvedHighPassFilter(linearAccelZ, prev_filteredAccelZ, dt);
     
-    % Ë«ÖØ»ı·Ö¼ÆËãÎ»ÒÆ
-    % µÚÒ»´Î»ı·Ö£º¼ÓËÙ¶È -> ËÙ¶È
+    % åŒé‡ç§¯åˆ†è®¡ç®—ä½ç§»
+    % ç¬¬ä¸€æ¬¡ç§¯åˆ†ï¼šåŠ é€Ÿåº¦ -> é€Ÿåº¦
     velocityX = cumtrapz(filteredAccelX) * dt;
     velocityY = cumtrapz(filteredAccelY) * dt;
     velocityZ = cumtrapz(filteredAccelZ) * dt;
     
-    % ÔÚ¾²Ö¹µãÖØÖÃËÙ¶È
+    % åœ¨é™æ­¢ç‚¹é‡ç½®é€Ÿåº¦
     for i = 1:length(velocityX)
         if stationary(i)
             velocityX(i:end) = velocityX(i:end) - velocityX(i);
@@ -123,17 +121,17 @@ function [dx, dy, dz] = calculateDisplacement(accelX, accelY, accelZ, gyroX, gyr
         end
     end
     
-    % Ó¦ÓÃ¸ßÍ¨ÂË²¨Æ÷È¥³ıËÙ¶ÈÆ¯ÒÆ
-    [velocityX, ~] = improvedHighPassFilter(velocityX, alpha, dt, 0);
-    [velocityY, ~] = improvedHighPassFilter(velocityY, alpha, dt, 0);
-    [velocityZ, ~] = improvedHighPassFilter(velocityZ, alpha, dt, 0);
+    % åº”ç”¨é«˜é€šæ»¤æ³¢å™¨å»é™¤é€Ÿåº¦æ¼‚ç§»
+    [velocityX, ~] = improvedHighPassFilter(velocityX, 0, dt);
+    [velocityY, ~] = improvedHighPassFilter(velocityY, 0, dt);
+    [velocityZ, ~] = improvedHighPassFilter(velocityZ, 0, dt);
     
-    % µÚ¶ş´Î»ı·Ö£ºËÙ¶È -> Î»ÒÆ
+    % ç¬¬äºŒæ¬¡ç§¯åˆ†ï¼šé€Ÿåº¦ -> ä½ç§»
     dx = cumtrapz(velocityX) * dt;
     dy = cumtrapz(velocityY) * dt;
     dz = cumtrapz(velocityZ) * dt;
     
-    % ÔÚ¾²Ö¹µãÖØÖÃÎ»ÒÆ
+    % åœ¨é™æ­¢ç‚¹é‡ç½®ä½ç§»
     for i = 1:length(dx)
         if stationary(i)
             dx(i:end) = dx(i:end) - dx(i);
@@ -142,12 +140,12 @@ function [dx, dy, dz] = calculateDisplacement(accelX, accelY, accelZ, gyroX, gyr
         end
     end
     
-    % Ó¦ÓÃ¸ßÍ¨ÂË²¨Æ÷È¥³ıÎ»ÒÆÆ¯ÒÆ
-    [dx, ~] = improvedHighPassFilter(dx, alpha, dt, 0);
-    [dy, ~] = improvedHighPassFilter(dy, alpha, dt, 0);
-    [dz, ~] = improvedHighPassFilter(dz, alpha, dt, 0);
+    % åº”ç”¨é«˜é€šæ»¤æ³¢å™¨å»é™¤ä½ç§»æ¼‚ç§»
+    [dx, ~] = improvedHighPassFilter(dx, 0, dt);
+    [dy, ~] = improvedHighPassFilter(dy, 0, dt);
+    [dz, ~] = improvedHighPassFilter(dz, 0, dt);
     
-    % ·µ»Ø×îºóÒ»¸öÎ»ÒÆÖµ
+    % è¿”å›æœ€åä¸€ä¸ªä½ç§»å€¼
     dx = dx(end);
     dy = dy(end);
     dz = dz(end);
