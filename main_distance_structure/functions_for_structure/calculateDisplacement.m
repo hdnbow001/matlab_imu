@@ -4,9 +4,9 @@ function [dx, dy, dz] = calculateDisplacement(accelX, accelY, accelZ, gyroX, gyr
     G = 9.80665;
     
     % 将加速度数据转换为G单位，然后转换为m/s²
-    accelX_g = double((accelX / 32768)) * accel_range;
-    accelY_g = double((accelY / 32768)) * accel_range;
-    accelZ_g = double((accelZ / 32768)) * accel_range;
+    accelX_g = (accelX / 32768) * accel_range;
+    accelY_g = (accelY / 32768) * accel_range;
+    accelZ_g = (accelZ / 32768) * accel_range;
     
     accelX_mps2 = accelX_g * G;
     accelY_mps2 = accelY_g * G;

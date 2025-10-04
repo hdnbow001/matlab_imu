@@ -1,0 +1,50 @@
+function [debugFig, debugHandles] = initDebugDisplay()
+    % 创建调试图表窗口
+    debugFig = figure('Position', [100, 100, 1200, 800], 'Name', '传感器数据调试');
+    
+    % 线性加速度子图
+    subplot(3,1,1);
+    h_accel_x = plot(NaN, NaN, 'r-');
+    hold on;
+    h_accel_y = plot(NaN, NaN, 'g-');
+    h_accel_z = plot(NaN, NaN, 'b-');
+    title('线性加速度 (m/s²)');
+    legend('X', 'Y', 'Z');
+    grid on;
+    
+    % 速度子图
+    subplot(3,1,2);
+    h_velocity_x = plot(NaN, NaN, 'r-');
+    hold on;
+    h_velocity_y = plot(NaN, NaN, 'g-');
+    h_velocity_z = plot(NaN, NaN, 'b-');
+    title('速度 (m/s)');
+    legend('X', 'Y', 'Z');
+    grid on;
+    
+    % 位移子图
+    subplot(3,1,3);
+    h_displacement_x = plot(NaN, NaN, 'r-');
+    hold on;
+    h_displacement_y = plot(NaN, NaN, 'g-');
+    h_displacement_z = plot(NaN, NaN, 'b-');
+    title('位移 (m)');
+    legend('X', 'Y', 'Z');
+    grid on;
+    
+    % 将所有句柄存储在结构体中便于返回
+    debugHandles.h_accel_x = h_accel_x;
+    debugHandles.h_accel_y = h_accel_y;
+    debugHandles.h_accel_z = h_accel_z;
+    debugHandles.h_velocity_x = h_velocity_x;
+    debugHandles.h_velocity_y = h_velocity_y;
+    debugHandles.h_velocity_z = h_velocity_z;
+    debugHandles.h_displacement_x = h_displacement_x;
+    debugHandles.h_displacement_y = h_displacement_y;
+    debugHandles.h_displacement_z = h_displacement_z;
+
+        % 保存坐标轴句柄以便后续控制
+    debugHandles.ax_accel = subplot(3,1,1);
+    debugHandles.ax_velocity = subplot(3,1,2);
+    debugHandles.ax_displacement = subplot(3,1,3);
+end

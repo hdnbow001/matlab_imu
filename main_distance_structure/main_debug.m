@@ -83,8 +83,34 @@ function main()
         [h_displacement, h_displacement_text, displacementAxes] = initDisplacementDisplay(displacement_subplot);
         
         % 创建调试图表
-        [debugFig, debugHandles] = initDebugDisplay();
-
+        debugFig = figure('Position', [100, 100, 1200, 800], 'Name', '传感器数据调试');
+        subplot(3,1,1);
+        h_accel_x = plot(NaN, NaN, 'r-');
+        hold on;
+        h_accel_y = plot(NaN, NaN, 'g-');
+        h_accel_z = plot(NaN, NaN, 'b-');
+        title('线性加速度 (m/s?)');
+        legend('X', 'Y', 'Z');
+        grid on;
+        
+        subplot(3,1,2);
+        h_velocity_x = plot(NaN, NaN, 'r-');
+        hold on;
+        h_velocity_y = plot(NaN, NaN, 'g-');
+        h_velocity_z = plot(NaN, NaN, 'b-');
+        title('速度 (m/s)');
+        legend('X', 'Y', 'Z');
+        grid on;
+        
+        subplot(3,1,3);
+        h_displacement_x = plot(NaN, NaN, 'r-');
+        hold on;
+        h_displacement_y = plot(NaN, NaN, 'g-');
+        h_displacement_z = plot(NaN, NaN, 'b-');
+        title('位移 (m)');
+        legend('X', 'Y', 'Z');
+        grid on;
+        
         % 帧同步
         syncBytes = [170, 85]; % AA 55
         syncFound = false;
@@ -200,12 +226,9 @@ function main()
                     fusedYaw = 0;
                 else
                     % 将陀螺仪数据转换为度/秒
-                    % gyroX_dps = (gyroXCompensated(i) / 32768) * gyro_range;
-                    % gyroY_dps = (gyroYCompensated(i) / 32768) * gyro_range;
-                    % gyroZ_dps = (gyroZCompensated(i) / 32768) * gyro_range;
-                    gyroX_dps = (double(gyroXCompensated(i)) / 32768) * gyro_range;
-                    gyroY_dps = (double(gyroYCompensated(i)) / 32768) * gyro_range;
-                    gyroZ_dps = (double(gyroZCompensated(i)) / 32768) * gyro_range;
+                    gyroX_dps = (gyroXCompensated(i) / 32768) * gyro_range;
+                    gyroY_dps = (gyroYCompensated(i) / 32768) * gyro_range;
+                    gyroZ_dps = (gyroZCompensated(i) / 32768) * gyro_range;
                     
                     % 使用陀螺仪积分更新角度
                     fusedPitch = fusedPitch + gyroX_dps * dt;
@@ -227,9 +250,9 @@ function main()
                     current_window_start = i;
                     window_count = window_count + 1;
                     % 重置位移数据
-                    % displacementX(i) = 0;
-                    % displacementY(i) = 0;
-                    % displacementZ(i) = 0;
+                    displacementX(i) = 0;
+                    displacementY(i) = 0;
+                    displacementZ(i) = 0;
                 end
                 
                 % 计算位移（当前5秒窗口内）
@@ -255,22 +278,22 @@ function main()
                 
                 % 每10个采样点输出一次数据
                 if mod(i, 10) == 0 || i == 1
-                        % 转换为物理单位 - 修复：使用double类型
-                        gyroX_dps = (double(gyroX_int) / 32768) * gyro_range;
-                        gyroY_dps = (double(gyroY_int) / 32768) * gyro_range;
-                        gyroZ_dps = (double(gyroZ_int) / 32768) * gyro_range;
-                        accelX_g = (double(accelX_int) / 32768) * accel_range;
-                        accelY_g = (double(accelY_int) / 32768) * accel_range;
-                        accelZ_g = (double(accelZ_int) / 32768) * accel_range;
-                        
-                        fprintf('%d\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\n', ...
-                            i, ...
-                            gyroX_hex, gyroX_dps, ...
-                            gyroY_hex, gyroY_dps, ...
-                            gyroZ_hex, gyroZ_dps, ...
-                            accelX_hex, accelX_g, ...
-                            accelY_hex, accelY_g, ...
-                            accelZ_hex, accelZ_g);
+                    % 转换为物理单位
+                    gyroX_dps = (gyroX_int / 32768) * gyro_range;
+                    gyroY_dps = (gyroY_int / 32768) * gyro_range;
+                    gyroZ_dps = (gyroZ_int / 32768) * gyro_range;
+                    accelX_g = (accelX_int / 32768) * accel_range;
+                    accelY_g = (accelY_int / 32768) * accel_range;
+                    accelZ_g = (accelZ_int / 32768) * accel_range;
+                    
+                    fprintf('%d\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\n', ...
+                        i, ...
+                        gyroX_hex, gyroX_dps, ...
+                        gyroY_hex, gyroY_dps, ...
+                        gyroZ_hex, gyroZ_dps, ...
+                        accelX_hex, accelX_g, ...
+                        accelY_hex, accelY_g, ...
+                        accelZ_hex, accelZ_g);
                     
                     % 显示当前动态零偏估计值
                     if i > 1
@@ -285,35 +308,39 @@ function main()
                 
                 % 更新姿态显示（每10个点更新一次以提高性能）
                 if mod(i, 10) == 0 || i == 1
-                        % 计算当前的角度值
-                        ax_temp = double(accelXData(i));  % 确保转换为double
-                        ay_temp = double(accelYData(i));
-                        az_temp = double(accelZData(i));
-                    
-                        % 通过加速度计计算俯仰角和滚转角
-                        ax_g = (ax_temp / 32768) * accel_range;
-                        ay_g = (ay_temp / 32768) * accel_range;
-                        az_g = (az_temp / 32768) * accel_range;
-                        
-                        pitch = atan2(ay_g, sqrt(ax_g^2 + az_g^2)) * 180/pi;
-                        roll = atan2(-ax_g, sqrt(ay_g^2 + az_g^2)) * 180/pi;
-                        yaw = 0; % 偏航角需要磁力计或陀螺仪积分
-
                     updateAttitudeDisplay(attitudeQuiver, attitudeText, attitudeSphere, ...
                         double(accelXData(i)), double(accelYData(i)), double(accelZData(i)), ...
                         gyroXCompensated(i), gyroYCompensated(i), gyroZCompensated(i), attitudeAxes, accel_range, gyro_range, pitchAngles(i), rollAngles(i), yawAngles(i));
                 end
                 
                 % 更新调试图表
-                %if i > 1
-                if mod(i, 10) == 0 || i == 1
+                if i > 1
                     % 计算线性加速度、速度和位移用于调试
-                    updateDebugDisplay(debugHandles, i, accelXData, accelYData, accelZData, ...
-                        pitchAngles, rollAngles, displacementX, displacementY, displacementZ, ...
+                    window_indices = max(1, i-50):i;
+                    [linAccelX, linAccelY, linAccelZ, velX, velY, velZ] = ...
+                        calculateDebugData(...
+                        double(accelXData(window_indices)), ...
+                        double(accelYData(window_indices)), ...
+                        double(accelZData(window_indices)), ...
+                        pitchAngles(window_indices), ...
+                        rollAngles(window_indices), ...
                         dt, accel_range);
+                    
+                    % 分别更新每条曲线
+                    % set(h_accel_x, 'XData', window_indices, 'YData', linAccelX);
+                    % set(h_accel_y, 'XData', window_indices, 'YData', linAccelY);
+                    % set(h_accel_z, 'XData', window_indices, 'YData', linAccelZ);
+                    % 
+                    % set(h_velocity_x, 'XData', window_indices, 'YData', velX);
+                    % set(h_velocity_y, 'XData', window_indices, 'YData', velY);
+                    % set(h_velocity_z, 'XData', window_indices, 'YData', velZ);
+                    % 
+                    % set(h_displacement_x, 'XData', window_indices, 'YData', displacementX(window_indices));
+                    % set(h_displacement_y, 'XData', window_indices, 'YData', displacementY(window_indices));
+                    % set(h_displacement_z, 'XData', window_indices, 'YData', displacementZ(window_indices));
                 end
                 
-                %drawnow limitrate; % 限制更新频率以提高性能
+                drawnow limitrate; % 限制更新频率以提高性能
                 
                 % 检查下一帧的同步字节
                 nextBytes = fread(s, 2, 'uint8');
