@@ -65,6 +65,14 @@ function main()
         fusedPitch = 0; % 融合后的俯仰角
         fusedRoll = 0;  % 融合后的滚转角
         fusedYaw = 0;   % 融合后的偏航角
+
+        % 在初始化部分添加Debug for displacement
+        debugData.linAccelX = zeros(1, maxPoints);
+        debugData.linAccelY = zeros(1, maxPoints);
+        debugData.linAccelZ = zeros(1, maxPoints);
+        debugData.velX = zeros(1, maxPoints);
+        debugData.velY = zeros(1, maxPoints);
+        debugData.velZ = zeros(1, maxPoints);
         
         % 零速度检测参数
         stationaryThreshold = [0.05, 2]; % [加速度方差阈值, 角速度均值阈值]
@@ -146,6 +154,8 @@ function main()
         fprintf('GYRO Y零偏: %.2f\n', bias_gyroY);
         fprintf('GYRO Z零偏: %.2f\n', bias_gyroZ);
         fprintf('开始数据采集...\n');
+
+
         
         % 数据采集循环
         for i = 1:maxPoints
@@ -235,7 +245,18 @@ function main()
                 % 计算位移（当前5秒窗口内）
                 if i > current_window_start
                     window_indices = current_window_start:i;
-                    [displacementX(i), displacementY(i), displacementZ(i)] = ...
+                    % [displacementX(i), displacementY(i), displacementZ(i)] = ...
+                    %     calculateDisplacement(...
+                    %     double(accelXData(window_indices)), ...
+                    %     double(accelYData(window_indices)), ...
+                    %     double(accelZData(window_indices)), ...
+                    %     double(gyroXCompensated(window_indices)), ...
+                    %     double(gyroYCompensated(window_indices)), ...
+                    %     double(gyroZCompensated(window_indices)), ...
+                    %     pitchAngles(window_indices), ...
+                    %     rollAngles(window_indices), ...
+                    %     dt, accel_range, gyro_range, window_count);
+                    [displacementX(i), displacementY(i), displacementZ(i), linAccelX_debug, linAccelY_debug, linAccelZ_debug, velX_debug, velY_debug, velZ_debug] = ...
                         calculateDisplacement(...
                         double(accelXData(window_indices)), ...
                         double(accelYData(window_indices)), ...
@@ -246,11 +267,27 @@ function main()
                         pitchAngles(window_indices), ...
                         rollAngles(window_indices), ...
                         dt, accel_range, gyro_range, window_count);
+
+                        % 存储调试数据（如果需要）
+                        debugData.linAccelX(i) = linAccelX_debug(end);
+                        debugData.linAccelY(i) = linAccelY_debug(end);
+                        debugData.linAccelZ(i) = linAccelZ_debug(end);
+                        debugData.velX(i) = velX_debug(end);
+                        debugData.velY(i) = velY_debug(end);
+                        debugData.velZ(i) = velZ_debug(end);
                 else
                 %     % 窗口的第一个点，位移为0
                     displacementX(i) = 0;
                     displacementY(i) = 0;
                     displacementZ(i) = 0;
+
+                        % 调试数据也为0
+                    debugData.linAccelX(i) = 0;
+                    debugData.linAccelY(i) = 0;
+                    debugData.linAccelZ(i) = 0;
+                    debugData.velX(i) = 0;
+                    debugData.velY(i) = 0;
+                    debugData.velZ(i) = 0;
                 end
                 
                 % 每10个采样点输出一次数据
@@ -308,9 +345,10 @@ function main()
                 %if i > 1
                 if mod(i, 10) == 0 || i == 1
                     % 计算线性加速度、速度和位移用于调试
-                    updateDebugDisplay(debugHandles, i, accelXData, accelYData, accelZData, ...
-                        pitchAngles, rollAngles, displacementX, displacementY, displacementZ, ...
-                        dt, accel_range);
+                    % updateDebugDisplay(debugHandles, i, accelXData, accelYData, accelZData, ...
+                    %     pitchAngles, rollAngles, displacementX, displacementY, displacementZ, ...
+                    %     dt, accel_range);
+                    updateDebugDisplay(debugHandles, i, debugData, displacementX, displacementY, displacementZ);
                 end
                 
                 %drawnow limitrate; % 限制更新频率以提高性能

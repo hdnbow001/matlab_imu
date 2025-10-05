@@ -15,41 +15,41 @@ function [h_displacement, h_displacement_text, displacementAxes] = initDisplacem
     zlabel('Z位移 (mm)');
     title('传感器位移轨迹 (5秒窗口)');
     
-    % 设置固定坐标轴范围 [-100, 100] 毫米
-    xlim([-100, 100]);
-    ylim([-100, 100]);
-    zlim([-100, 100]);
+    % 设置固定坐标轴范围 [-1000, 1000] 毫米 (1米)
+    xlim([-1000, 1000]);
+    ylim([-1000, 1000]);
+    zlim([-1000, 1000]);
     
     % 启用3D旋转
     rotate3d on;
     
     % 添加坐标轴
-    line([-100 100], [0 0], [0 0], 'Color', 'r', 'LineStyle', '--');
-    line([0 0], [-100 100], [0 0], 'Color', 'g', 'LineStyle', '--');
-    line([0 0], [0 0], [-100 100], 'Color', 'b', 'LineStyle', '--');
+    line([-1000 1000], [0 0], [0 0], 'Color', 'r', 'LineStyle', '--');
+    line([0 0], [-1000 1000], [0 0], 'Color', 'g', 'LineStyle', '--');
+    line([0 0], [0 0], [-1000 1000], 'Color', 'b', 'LineStyle', '--');
     
-    % 添加刻度标记
+    % 添加刻度标记 - 调整间隔为100毫米
     % X轴刻度
-    for x = -100:50:100
+    for x = -1000:200:1000
         if x ~= 0
-            plot3([x x], [0 0], [0 -5], 'k-', 'LineWidth', 1);
-            text(x, -10, -10, sprintf('%d', x), 'FontSize', 8, 'HorizontalAlignment', 'center');
+            plot3([x x], [0 0], [0 -50], 'k-', 'LineWidth', 1);
+            text(x, -100, -100, sprintf('%d', x), 'FontSize', 8, 'HorizontalAlignment', 'center');
         end
     end
     
     % Y轴刻度
-    for y = -100:50:100
+    for y = -1000:200:1000
         if y ~= 0
-            plot3([0 0], [y y], [0 -5], 'k-', 'LineWidth', 1);
-            text(-10, y, -10, sprintf('%d', y), 'FontSize', 8, 'HorizontalAlignment', 'center');
+            plot3([0 0], [y y], [0 -50], 'k-', 'LineWidth', 1);
+            text(-100, y, -100, sprintf('%d', y), 'FontSize', 8, 'HorizontalAlignment', 'center');
         end
     end
     
     % Z轴刻度
-    for z = -100:50:100
+    for z = -1000:200:1000
         if z ~= 0
-            plot3([0 -5], [0 0], [z z], 'k-', 'LineWidth', 1);
-            text(-10, -10, z, sprintf('%d', z), 'FontSize', 8, 'HorizontalAlignment', 'center');
+            plot3([0 -50], [0 0], [z z], 'k-', 'LineWidth', 1);
+            text(-100, -100, z, sprintf('%d', z), 'FontSize', 8, 'HorizontalAlignment', 'center');
         end
     end
     
@@ -58,10 +58,18 @@ function [h_displacement, h_displacement_text, displacementAxes] = initDisplacem
         '位移: (0.00, 0.00, 0.00) mm',
         '窗口: 1'
     };
-    h_displacement_text = text(0, 0, 110, text_cell, ...  % Z坐标调整为110以匹配新的坐标范围
+    h_displacement_text = text(0, 0, 1100, text_cell, ...  % Z坐标调整为1100以匹配新的坐标范围
         'HorizontalAlignment', 'center', 'BackgroundColor', 'white', 'EdgeColor', 'black', ...
         'Interpreter', 'none', 'FontSize', 10);
     
+    % 添加坐标轴标签
+    text(1050, 0, 0, 'X', 'FontSize', 12, 'FontWeight', 'bold', 'Color', 'r');
+    text(0, 1050, 0, 'Y', 'FontSize', 12, 'FontWeight', 'bold', 'Color', 'g');
+    text(0, 0, 1050, 'Z', 'FontSize', 12, 'FontWeight', 'bold', 'Color', 'b');
+    
     % 保存坐标轴句柄
     displacementAxes = gca;
+    
+    % 设置更好的视角
+    view(45, 30);
 end
