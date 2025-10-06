@@ -1,5 +1,5 @@
 % 计算调试数据函数
-function [linAccelX, linAccelY, linAccelZ, velX, velY, velZ] = calculateDebugData(accelX, accelY, accelZ, pitchAngles, rollAngles, dt, accel_range)
+function [linAccelX, linAccelY, linAccelZ, velX, velY, velZ] = calculateDebugData_(accelX, accelY, accelZ, pitchAngles, rollAngles, dt, accel_range)
     % 地球重力加速度参考值 (m/s?)
     G = 9.80665;
     
