@@ -5,7 +5,8 @@ close all;
 fs = 5;   % 采样率
 T = 20;   % 时宽
 n = round(T*fs);  % 采样点个数
-s = serial('COM7'); % 创建串口对象
+%s = serial('COM7'); % UIH创建串口对象
+s = serial('COM3'); % hd创建串口对象
 set(s, 'BaudRate', 115200); % 设置波特率
 dataSwitch = 0;     % 0 采集数据 1 启动 2 停止
 

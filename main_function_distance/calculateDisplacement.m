@@ -26,30 +26,39 @@ function [dx, dy, dz, linAccelX, linAccelY, linAccelZ, velX, velY, velZ] = calcu
     linearAccelZ = zeros(size(accelZ_mps2));
     stationary = false(size(accelX_mps2));
     
-    % ========== 增强的旋转处理 ==========
+    % ========== 改进的重力补偿和旋转处理 ==========
     
-    % 使用持久变量保持状态
-    persistent cumulative_yaw prev_gyroZ prev_linearAccel rotation_filter_state;
+    % 使用持久变量保持旋转状态
+    persistent cumulative_yaw prev_gyroX prev_gyroY prev_gyroZ;
     
     if isempty(cumulative_yaw) || window_count == 1
         cumulative_yaw = 0;
+        prev_gyroX = 0;
+        prev_gyroY = 0;
         prev_gyroZ = 0;
-        prev_linearAccel = [0; 0; 0];
-        rotation_filter_state = struct('gyro_history', [], 'accel_history', []);
     end
     
-    % 预处理：分析窗口内的运动特征
+    % 预处理：分析运动特征
     gyro_magnitudes = sqrt(gyroX_dps.^2 + gyroY_dps.^2 + gyroZ_dps.^2);
-    accel_magnitudes = sqrt(accelX_mps2.^2 + accelY_mps2.^2 + accelZ_mps2.^2);
-    
     mean_gyro = mean(gyro_magnitudes);
-    std_accel = std(accel_magnitudes);
+    max_gyro = max(gyro_magnitudes);
     
-    % 判断是否为旋转主导的运动窗口
-    is_rotation_window = mean_gyro > 8.0 && std_accel < 0.3 * G;
+    % 窗口级旋转检测
+    if mean_gyro > 20.0 || max_gyro > 50.0
+        % fprintf('窗口 %d: 检测到强烈旋转(平均=%.1fdps, 最大=%.1fdps)，跳过位移计算\n', ...
+        %         window_count, mean_gyro, max_gyro);
+        dx = 0; dy = 0; dz = 0;
+        linAccelX = zeros(n, 1);
+        linAccelY = zeros(n, 1);
+        linAccelZ = zeros(n, 1);
+        velX = zeros(n, 1);
+        velY = zeros(n, 1);
+        velZ = zeros(n, 1);
+        return;
+    end
     
     for i = 1:n
-        % 计算当前时刻的旋转矩阵
+        % 计算基本旋转矩阵（俯仰和滚转）
         R_x = [1, 0, 0; 
                0, cos(rollRad(i)), -sin(rollRad(i)); 
                0, sin(rollRad(i)), cos(rollRad(i))];
@@ -58,17 +67,18 @@ function [dx, dy, dz, linAccelX, linAccelY, linAccelZ, velX, velY, velZ] = calcu
                0, 1, 0;
                -sin(pitchRad(i)), 0, cos(pitchRad(i))];
         
-        % 更新偏航角（仅使用Z轴陀螺仪）
+        % 计算偏航角变化（基于陀螺仪Z轴）
         if i > 1
             yaw_change = (gyroZ_dps(i) + prev_gyroZ) * 0.5 * dt * pi/180;
             cumulative_yaw = cumulative_yaw + yaw_change;
         end
         
+        % 偏航旋转矩阵
         R_z = [cos(cumulative_yaw), -sin(cumulative_yaw), 0;
                sin(cumulative_yaw), cos(cumulative_yaw), 0;
                0, 0, 1];
         
-        % 完整的旋转矩阵：从世界坐标系到传感器坐标系
+        % 完整的旋转矩阵：先偏航，再俯仰，最后滚转
         R_ws = R_x * R_y * R_z;
         
         % 重力向量在世界坐标系中
@@ -77,150 +87,114 @@ function [dx, dy, dz, linAccelX, linAccelY, linAccelZ, velX, velY, velZ] = calcu
         % 将重力向量旋转到传感器坐标系
         gravity_sensor = R_ws * gravity_world;
         
-        % 当前传感器读数
+        % 传感器读数
         accel_sensor = [accelX_mps2(i); accelY_mps2(i); accelZ_mps2(i)];
         
-        % ========== 关键改进：智能旋转检测 ==========
+        % ========== 点级旋转检测 ==========
         
-        current_gyro_mag = sqrt(gyroX_dps(i)^2 + gyroY_dps(i)^2 + gyroZ_dps(i)^2);
-        current_accel_mag = norm(accel_sensor);
-        gravity_mag = norm(gravity_sensor);
+        % 计算角速度幅度
+        current_gyro = sqrt(gyroX_dps(i)^2 + gyroY_dps(i)^2 + gyroZ_dps(i)^2);
+        current_accel = norm(accel_sensor);
         
-        % 计算加速度向量与重力向量的夹角
-        if current_accel_mag > 0 && gravity_mag > 0
-            cos_angle = dot(accel_sensor, gravity_sensor) / (current_accel_mag * gravity_mag);
-            cos_angle = max(min(cos_angle, 1), -1); % 防止数值误差
-            accel_gravity_angle = acos(cos_angle);
-        else
-            accel_gravity_angle = 0;
-        end
-        
-        % 旋转检测条件
-        condition1 = current_gyro_mag > 10.0 && abs(current_accel_mag - G) < 0.25 * G;
-        condition2 = current_gyro_mag > 5.0 && accel_gravity_angle < 0.3; % 约17度
-        condition3 = is_rotation_window && current_gyro_mag > 3.0;
-        
-        % 计算线性加速度残余（在补偿重力之前）
-        residual_accel = norm(accel_sensor - gravity_sensor);
-        condition4 = current_gyro_mag > 8.0 && residual_accel < 0.2 * G;
-        
-        is_pure_rotation = condition1 || condition2 || condition3 || condition4;
+        % 检测纯旋转运动
+        is_pure_rotation = current_gyro > 15.0 && abs(current_accel - G) < 0.3 * G;
         
         if is_pure_rotation
-            % 纯旋转情况：使用强抑制策略
-            % 策略1：完全抑制线性加速度
+            % 纯旋转情况：完全抑制线性加速度
             linearAccelSensor = [0; 0; 0];
-            
-            % 策略2：或者使用低通滤波（二选一）
-            % linearAccelSensor = 0.05 * (accel_sensor - gravity_sensor) + 0.95 * prev_linearAccel;
-            
             stationary(i) = true;
-            
-            % 调试信息
-            if mod(i, 100) == 0 && window_count > 1
-                fprintf('旋转抑制: 点 %d, 角速度=%.1f dps, 残余加速度=%.3f G\n', ...
-                    i, current_gyro_mag, residual_accel/G);
-            end
         else
-            % 正常情况：标准重力补偿
+            % 正常情况：减去重力分量
             linearAccelSensor = accel_sensor - gravity_sensor;
             stationary(i) = false;
         end
         
-        % 将线性加速度转换回世界坐标系
+        % 将线性加速度从传感器坐标系旋转回世界坐标系
         linearAccelWorld = R_ws' * linearAccelSensor;
         
         linearAccelX(i) = linearAccelWorld(1);
         linearAccelY(i) = linearAccelWorld(2);
         linearAccelZ(i) = linearAccelWorld(3);
         
-        % 更新状态变量
+        % 更新前一次陀螺仪值
+        prev_gyroX = gyroX_dps(i);
+        prev_gyroY = gyroY_dps(i);
         prev_gyroZ = gyroZ_dps(i);
-        prev_linearAccel = linearAccelSensor;
-        
-        % 零速度检测（增强版）
-        if ~is_pure_rotation
-            gyroNorm = sqrt(gyroX_dps(i)^2 + gyroY_dps(i)^2 + gyroZ_dps(i)^2);
-            accelNorm = norm(accel_sensor);
-            
-            % 严格的静止条件
-            if abs(accelNorm - G) < 0.08 * G && gyroNorm < 1.0
-                stationary(i) = true;
-                % 在静止点强制加速度为零
-                linearAccelX(i) = 0;
-                linearAccelY(i) = 0;
-                linearAccelZ(i) = 0;
-            end
+    end
+    
+    % ========== 增强的零速度检测 ==========
+    
+    stationary_detailed = detectStationaryPoints(accelX_mps2, accelY_mps2, accelZ_mps2, ...
+                                               gyroX_dps, gyroY_dps, gyroZ_dps);
+    
+    % 合并旋转检测和静止检测
+    for i = 1:n
+        if stationary_detailed(i)
+            stationary(i) = true;
+            linearAccelX(i) = 0;
+            linearAccelY(i) = 0;
+            linearAccelZ(i) = 0;
         end
     end
     
-    % ========== 偏置消除 ==========
+    % ========== 改进的偏置消除 ==========
     
-    if n > 10
-        % 使用前10个点计算初始偏置（如果大部分是静止的）
-        initial_bias_X = mean(linearAccelX(1:min(10,n)));
-        initial_bias_Y = mean(linearAccelY(1:min(10,n)));
-        initial_bias_Z = mean(linearAccelZ(1:min(10,n)));
+    % 使用静止点计算偏置
+    stationary_indices = find(stationary);
+    if length(stationary_indices) >= 3
+        bias_X = mean(linearAccelX(stationary_indices));
+        bias_Y = mean(linearAccelY(stationary_indices));
+        bias_Z = mean(linearAccelZ(stationary_indices));
     else
-        initial_bias_X = mean(linearAccelX);
-        initial_bias_Y = mean(linearAccelY);
-        initial_bias_Z = mean(linearAccelZ);
+        % 如果没有足够静止点，使用前几个点
+        num_init = min(10, n);
+        bias_X = mean(linearAccelX(1:num_init));
+        bias_Y = mean(linearAccelY(1:num_init));
+        bias_Z = mean(linearAccelZ(1:num_init));
     end
     
-    linearAccelX = linearAccelX - initial_bias_X;
-    linearAccelY = linearAccelY - initial_bias_Y;
-    linearAccelZ = linearAccelZ - initial_bias_Z;
+    linearAccelX_corrected = linearAccelX - bias_X;
+    linearAccelY_corrected = linearAccelY - bias_Y;
+    linearAccelZ_corrected = linearAccelZ - bias_Z;
     
-    % ========== 滤波处理 ==========
+    % 在静止点强制加速度为零
+    for i = 1:n
+        if stationary(i)
+            linearAccelX_corrected(i) = 0;
+            linearAccelY_corrected(i) = 0;
+            linearAccelZ_corrected(i) = 0;
+        end
+    end
+    
+    % ========== 滤波策略 ==========
     
     % 使用持久变量保持滤波器状态
-    persistent prev_window_count_filter prev_filteredX prev_filteredY prev_filteredZ;
+    persistent prev_window_count_filter prev_filteredAccelX prev_filteredAccelY prev_filteredAccelZ;
     
     if isempty(prev_window_count_filter) || prev_window_count_filter ~= window_count
-        prev_filteredX = 0;
-        prev_filteredY = 0;
-        prev_filteredZ = 0;
+        prev_filteredAccelX = 0;
+        prev_filteredAccelY = 0;
+        prev_filteredAccelZ = 0;
         prev_window_count_filter = window_count;
     end
     
-    % 高通滤波器参数（去除直流偏置）
-    fc_high = 0.1; % 截止频率 0.1Hz
-    alpha_high = dt / (1/(2*pi*fc_high) + dt);
+    % 应用低通滤波
+    alpha = 0.8; % 滤波系数
     
-    % 低通滤波器参数（降噪）
-    fc_low = 5.0; % 截止频率 5Hz
-    alpha_low = dt / (1/(2*pi*fc_low) + dt);
-    
-    filteredAccelX = zeros(size(linearAccelX));
-    filteredAccelY = zeros(size(linearAccelY));
-    filteredAccelZ = zeros(size(linearAccelZ));
+    filteredAccelX = zeros(size(linearAccelX_corrected));
+    filteredAccelY = zeros(size(linearAccelY_corrected));
+    filteredAccelZ = zeros(size(linearAccelZ_corrected));
     
     for i = 1:n
-        % 高通滤波（去除直流偏置）
         if i == 1
-            highpassX = (1 - alpha_high) * linearAccelX(i);
-            highpassY = (1 - alpha_high) * linearAccelY(i);
-            highpassZ = (1 - alpha_high) * linearAccelZ(i);
+            filteredAccelX(i) = linearAccelX_corrected(i);
+            filteredAccelY(i) = linearAccelY_corrected(i);
+            filteredAccelZ(i) = linearAccelZ_corrected(i);
         else
-            highpassX = alpha_high * prev_filteredX + (1 - alpha_high) * (linearAccelX(i) - linearAccelX(i-1));
-            highpassY = alpha_high * prev_filteredY + (1 - alpha_high) * (linearAccelY(i) - linearAccelY(i-1));
-            highpassZ = alpha_high * prev_filteredZ + (1 - alpha_high) * (linearAccelZ(i) - linearAccelZ(i-1));
+            filteredAccelX(i) = alpha * filteredAccelX(i-1) + (1-alpha) * linearAccelX_corrected(i);
+            filteredAccelY(i) = alpha * filteredAccelY(i-1) + (1-alpha) * linearAccelY_corrected(i);
+            filteredAccelZ(i) = alpha * filteredAccelZ(i-1) + (1-alpha) * linearAccelZ_corrected(i);
         end
-        
-        % 低通滤波（降噪）
-        if i == 1
-            filteredAccelX(i) = alpha_low * highpassX;
-            filteredAccelY(i) = alpha_low * highpassY;
-            filteredAccelZ(i) = alpha_low * highpassZ;
-        else
-            filteredAccelX(i) = alpha_low * highpassX + (1 - alpha_low) * filteredAccelX(i-1);
-            filteredAccelY(i) = alpha_low * highpassY + (1 - alpha_low) * filteredAccelY(i-1);
-            filteredAccelZ(i) = alpha_low * highpassZ + (1 - alpha_low) * filteredAccelZ(i-1);
-        end
-        
-        prev_filteredX = filteredAccelX(i);
-        prev_filteredY = filteredAccelY(i);
-        prev_filteredZ = filteredAccelZ(i);
         
         % 在静止点强制加速度为零
         if stationary(i)
@@ -230,48 +204,17 @@ function [dx, dy, dz, linAccelX, linAccelY, linAccelZ, velX, velY, velZ] = calcu
         end
     end
     
-    % ========== 速度积分 ==========
+    % ========== 改进的积分计算 ==========
     
-    velocityX = zeros(size(filteredAccelX));
-    velocityY = zeros(size(filteredAccelY));
-    velocityZ = zeros(size(filteredAccelZ));
+    % 第一次积分：加速度 -> 速度（使用梯形积分法）
+    velocityX = integrateAcceleration(filteredAccelX, dt, stationary);
+    velocityY = integrateAcceleration(filteredAccelY, dt, stationary);
+    velocityZ = integrateAcceleration(filteredAccelZ, dt, stationary);
     
-    for i = 1:n
-        if i == 1
-            velocityX(i) = filteredAccelX(i) * dt;
-            velocityY(i) = filteredAccelY(i) * dt;
-            velocityZ(i) = filteredAccelZ(i) * dt;
-        else
-            velocityX(i) = velocityX(i-1) + filteredAccelX(i) * dt;
-            velocityY(i) = velocityY(i-1) + filteredAccelY(i) * dt;
-            velocityZ(i) = velocityZ(i-1) + filteredAccelZ(i) * dt;
-        end
-        
-        % 在静止点重置速度
-        if stationary(i)
-            velocityX(i) = 0;
-            velocityY(i) = 0;
-            velocityZ(i) = 0;
-        end
-    end
-    
-    % ========== 位移积分 ==========
-    
-    dx_array = zeros(size(velocityX));
-    dy_array = zeros(size(velocityY));
-    dz_array = zeros(size(velocityZ));
-    
-    for i = 1:n
-        if i == 1
-            dx_array(i) = velocityX(i) * dt;
-            dy_array(i) = velocityY(i) * dt;
-            dz_array(i) = velocityZ(i) * dt;
-        else
-            dx_array(i) = dx_array(i-1) + velocityX(i) * dt;
-            dy_array(i) = dy_array(i-1) + velocityY(i) * dt;
-            dz_array(i) = dz_array(i-1) + velocityZ(i) * dt;
-        end
-    end
+    % 第二次积分：速度 -> 位移
+    dx_array = integrateVelocity(velocityX, dt);
+    dy_array = integrateVelocity(velocityY, dt);
+    dz_array = integrateVelocity(velocityZ, dt);
     
     % 返回中间结果
     linAccelX = filteredAccelX;
@@ -288,12 +231,116 @@ function [dx, dy, dz, linAccelX, linAccelY, linAccelZ, velX, velY, velZ] = calcu
     
     % 调试输出
     if window_count > 1 && mod(window_count, 5) == 0
+        pos_accel = sum(filteredAccelX > 0.1);
+        neg_accel = sum(filteredAccelX < -0.1);
         stationary_count = sum(stationary);
-        rotation_count = sum(stationary & (gyro_magnitudes > 5.0));
         mean_displacement = sqrt(dx^2 + dy^2 + dz^2);
-        max_gyro = max(gyro_magnitudes);
         
-        fprintf('窗口 %d: 位移=%.3fm, 最大角速度=%.1fdps, 静止点=%d, 旋转点=%d\n', ...
-            window_count, mean_displacement, max_gyro, stationary_count, rotation_count);
+        % fprintf('窗口 %d: 位移=%.3fm, 正加速度点=%d, 负加速度点=%d, 静止点=%d\n', ...
+        %     window_count, mean_displacement, pos_accel, neg_accel, stationary_count);
+    end
+end
+
+% ========== 辅助函数 ==========
+
+function stationary = detectStationaryPoints(accelX, accelY, accelZ, gyroX, gyroY, gyroZ)
+    % 严格的静止点检测
+    n = length(accelX);
+    stationary = false(n, 1);
+    G = 9.80665;
+    
+    for i = 1:n
+        accel_mag = sqrt(accelX(i)^2 + accelY(i)^2 + accelZ(i)^2);
+        gyro_mag = sqrt(gyroX(i)^2 + gyroY(i)^2 + gyroZ(i)^2);
+        
+        % 严格的静止条件
+        condition1 = abs(accel_mag - G) < 0.08 * G;  % 接近重力
+        condition2 = gyro_mag < 1.0;                 % 几乎没有旋转
+        
+        % 检查加速度变化
+        if i > 1
+            accel_change = sqrt((accelX(i)-accelX(i-1))^2 + ...
+                               (accelY(i)-accelY(i-1))^2 + ...
+                               (accelZ(i)-accelZ(i-1))^2);
+            condition3 = accel_change < 0.1 * G;
+        else
+            condition3 = true;
+        end
+        
+        stationary(i) = condition1 && condition2 && condition3;
+    end
+    
+    % 形态学清理
+    min_duration = 3; % 至少3个连续点
+    stationary = morphologicalClean(stationary, min_duration);
+end
+
+function cleaned = morphologicalClean(stationary, min_duration)
+    % 形态学清理：去除短于min_duration的区间
+    n = length(stationary);
+    cleaned = stationary;
+    
+    i = 1;
+    while i <= n
+        if stationary(i)
+            % 找到连续静止段的结束
+            j = i;
+            while j < n && stationary(j+1)
+                j = j + 1;
+            end
+            
+            % 如果段太短，标记为非静止
+            if (j - i + 1) < min_duration
+                cleaned(i:j) = false;
+            end
+            
+            i = j + 1;
+        else
+            i = i + 1;
+        end
+    end
+end
+
+function velocity = integrateAcceleration(acceleration, dt, stationary)
+    % 正确的加速度积分
+    n = length(acceleration);
+    velocity = zeros(n, 1);
+    
+    current_vel = 0;
+    for i = 1:n
+        % 梯形积分
+        if i == 1
+            delta_v = acceleration(i) * dt;
+        else
+            delta_v = (acceleration(i-1) + acceleration(i)) * 0.5 * dt;
+        end
+        
+        current_vel = current_vel + delta_v;
+        
+        % 在静止点重置速度
+        if stationary(i)
+            current_vel = 0;
+        end
+        
+        velocity(i) = current_vel;
+    end
+end
+
+function displacement = integrateVelocity(velocity, dt)
+    % 速度积分
+    n = length(velocity);
+    displacement = zeros(n, 1);
+    
+    current_disp = 0;
+    for i = 1:n
+        % 梯形积分
+        if i == 1
+            delta_d = velocity(i) * dt;
+        else
+            delta_d = (velocity(i-1) + velocity(i)) * 0.5 * dt;
+        end
+        
+        current_disp = current_disp + delta_d;
+        displacement(i) = current_disp;
     end
 end

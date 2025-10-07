@@ -3,6 +3,7 @@ function main()
     fs = 10;   % 采样率 10Hz
     T = 100;   % 时宽 (100秒)
     n = round(T*fs);  % 采样点个数 (1000个)
+    %%s = serial('COM7'); % 创建串口对象-在UIH开发机上
     s = serial('COM3'); % 创建串口对象-在E5开发机上
     set(s, 'BaudRate', 115200); % 设置波特率
     
@@ -10,21 +11,6 @@ function main()
     accel_range = 2; % ±2G
     gyro_range = 250; % ±250dps
     window_size = 5 * fs; % 5秒窗口大小 (50个采样点)
-    
-    % === 修正：调整自适应互补滤波参数 ===
-    adaptive_alpha_min = 0.85;  % 最小滤波系数
-    adaptive_alpha_max = 0.98;  % 最大滤波系数
-    convergence_time = 0.8;     % 收敛时间0.8秒
-    convergence_samples = round(convergence_time * fs); % 收敛所需采样点数
-    
-    % 运动状态检测参数
-    motion_threshold = 0.1;     % 运动检测阈值(G)
-    stationary_threshold = 0.02; % 静止检测阈值(G)
-    
-    % 初始化自适应权重
-    accel_weight = 1.0;         % 初始阶段更信任加速度计
-    gyro_weight = 0.0;
-    % ==============================
     
     flag = false;
     try
@@ -60,15 +46,7 @@ function main()
         % 姿态角度数据
         pitchAngles = zeros(1, maxPoints);
         rollAngles = zeros(1, maxPoints);
-        
-        % 存储原始加速度计姿态角
-        accPitchAngles = zeros(1, maxPoints);
-        accRollAngles = zeros(1, maxPoints);
-        
-        % === 新增：运动状态检测数据 ===
-        accel_magnitude = zeros(1, maxPoints);
-        motion_state = zeros(1, maxPoints); % 0=静止, 1=运动
-        % =============================
+        yawAngles = zeros(1, maxPoints); % 新增偏航角存储
         
         % 动态零偏估计参数
         alpha = 0.001; % 滤波系数（越小越平滑但响应越慢）
@@ -82,9 +60,11 @@ function main()
         bias_gyroY = 0;
         bias_gyroZ = 0;
         
-        % 融合角度初始化
+        % 互补滤波参数
+        compAlpha = 0.98; % 互补滤波系数
         fusedPitch = 0; % 融合后的俯仰角
         fusedRoll = 0;  % 融合后的滚转角
+        fusedYaw = 0;   % 融合后的偏航角
 
         % 在初始化部分添加Debug for displacement
         debugData.linAccelX = zeros(1, maxPoints);
@@ -174,6 +154,8 @@ function main()
         fprintf('GYRO Y零偏: %.2f\n', bias_gyroY);
         fprintf('GYRO Z零偏: %.2f\n', bias_gyroZ);
         fprintf('开始数据采集...\n');
+
+
         
         % 数据采集循环
         for i = 1:maxPoints
@@ -216,55 +198,61 @@ function main()
                 accelYData(i) = accelY_int;
                 accelZData(i) = accelZ_int;
                 
-                % === 新增：计算加速度计矢量幅值（用于运动检测） ===
-                accel_magnitude(i) = sqrt(double(accelXData(i))^2 + double(accelYData(i))^2 + double(accelZData(i))^2);
-                % ===============================================
-                
-                % 计算加速度计姿态角度 - 只调用一次
+                % 计算加速度计姿态角度
                 [accPitch, accRoll] = calculateAttitude(...
                     double(accelXData(i)), double(accelYData(i)), double(accelZData(i)), accel_range);
                 
-                % === 修正：确保加速度计角度在0-360°范围内 ===
-                accPitch = mod(accPitch, 360);
-                accRoll = mod(accRoll, 360);
-                % ==========================================
-                
-                % 存储原始加速度计姿态角
-                accPitchAngles(i) = accPitch;
-                accRollAngles(i) = accRoll;
-                
-                % === 修改：使用自适应互补滤波融合姿态 ===
+                % 互补滤波融合姿态
                 if i == 1
                     % 初始化融合角度
                     fusedPitch = accPitch;
                     fusedRoll = accRoll;
+                    fusedYaw = 0;
                 else
                     % 将陀螺仪数据转换为度/秒
                     gyroX_dps = (double(gyroXCompensated(i)) / 32768) * gyro_range;
                     gyroY_dps = (double(gyroYCompensated(i)) / 32768) * gyro_range;
+                    gyroZ_dps = (double(gyroZCompensated(i)) / 32768) * gyro_range;
                     
-                    % 调用自适应传感器融合函数
-                    [fusedPitch, fusedRoll, accel_weight] = adaptiveSensorFusion(...
-                        accPitch, accRoll, gyroX_dps, gyroY_dps, ...
-                        fusedPitch, fusedRoll, dt, i, convergence_samples, ...
-                        accel_magnitude, motion_threshold);
+                    % 使用陀螺仪积分更新角度
+                    fusedPitch = fusedPitch + gyroX_dps * dt;
+                    fusedRoll = fusedRoll + gyroY_dps * dt;
+                    fusedYaw = fusedYaw + gyroZ_dps * dt;
+                    
+                    % 使用互补滤波融合加速度计的角度
+                    fusedPitch = compAlpha * fusedPitch + (1 - compAlpha) * accPitch;
+                    fusedRoll = compAlpha * fusedRoll + (1 - compAlpha) * accRoll;
                 end
-                % ==========================================
                 
-                % === 修正：确保融合后的角度在0-360°范围内 ===
-                pitchAngles(i) = mod(fusedPitch, 360);
-                rollAngles(i) = mod(fusedRoll, 360);
-                % ==========================================
+                % 存储融合后的角度
+                pitchAngles(i) = fusedPitch;
+                rollAngles(i) = fusedRoll;
+                yawAngles(i) = fusedYaw;
                 
                 % 检查是否需要开始新的5秒窗口
                 if mod(i-1, window_size) == 0
                     current_window_start = i;
                     window_count = window_count + 1;
+                    % 重置位移数据
+                    % displacementX(i) = 0;
+                    % displacementY(i) = 0;
+                    % displacementZ(i) = 0;
                 end
                 
                 % 计算位移（当前5秒窗口内）
                 if i > current_window_start
                     window_indices = current_window_start:i;
+                    % [displacementX(i), displacementY(i), displacementZ(i)] = ...
+                    %     calculateDisplacement(...
+                    %     double(accelXData(window_indices)), ...
+                    %     double(accelYData(window_indices)), ...
+                    %     double(accelZData(window_indices)), ...
+                    %     double(gyroXCompensated(window_indices)), ...
+                    %     double(gyroYCompensated(window_indices)), ...
+                    %     double(gyroZCompensated(window_indices)), ...
+                    %     pitchAngles(window_indices), ...
+                    %     rollAngles(window_indices), ...
+                    %     dt, accel_range, gyro_range, window_count);
                     [displacementX(i), displacementY(i), displacementZ(i), linAccelX_debug, linAccelY_debug, linAccelZ_debug, velX_debug, velY_debug, velZ_debug] = ...
                         calculateDisplacement(...
                         double(accelXData(window_indices)), ...
@@ -277,20 +265,20 @@ function main()
                         rollAngles(window_indices), ...
                         dt, accel_range, gyro_range, window_count);
 
-                    % 存储调试数据
-                    debugData.linAccelX(i) = linAccelX_debug(end);
-                    debugData.linAccelY(i) = linAccelY_debug(end);
-                    debugData.linAccelZ(i) = linAccelZ_debug(end);
-                    debugData.velX(i) = velX_debug(end);
-                    debugData.velY(i) = velY_debug(end);
-                    debugData.velZ(i) = velZ_debug(end);
+                        % 存储调试数据（如果需要）
+                        debugData.linAccelX(i) = linAccelX_debug(end);
+                        debugData.linAccelY(i) = linAccelY_debug(end);
+                        debugData.linAccelZ(i) = linAccelZ_debug(end);
+                        debugData.velX(i) = velX_debug(end);
+                        debugData.velY(i) = velY_debug(end);
+                        debugData.velZ(i) = velZ_debug(end);
                 else
-                    % 窗口的第一个点，位移为0
+                %     % 窗口的第一个点，位移为0
                     displacementX(i) = 0;
                     displacementY(i) = 0;
                     displacementZ(i) = 0;
 
-                    % 调试数据也为0
+                        % 调试数据也为0
                     debugData.linAccelX(i) = 0;
                     debugData.linAccelY(i) = 0;
                     debugData.linAccelZ(i) = 0;
@@ -301,35 +289,28 @@ function main()
                 
                 % 每10个采样点输出一次数据
                 if mod(i, 10) == 0 || i == 1
-                    % 转换为物理单位
-                    gyroX_dps = (double(gyroX_int) / 32768) * gyro_range;
-                    gyroY_dps = (double(gyroY_int) / 32768) * gyro_range;
-                    gyroZ_dps = (double(gyroZ_int) / 32768) * gyro_range;
-                    accelX_g = (double(accelX_int) / 32768) * accel_range;
-                    accelY_g = (double(accelY_int) / 32768) * accel_range;
-                    accelZ_g = (double(accelZ_int) / 32768) * accel_range;
-                    
-                    fprintf('%d\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\n', ...
-                        i, ...
-                        gyroX_hex, gyroX_dps, ...
-                        gyroY_hex, gyroY_dps, ...
-                        gyroZ_hex, gyroZ_dps, ...
-                        accelX_hex, accelX_g, ...
-                        accelY_hex, accelY_g, ...
-                        accelZ_hex, accelZ_g);
+                        % 转换为物理单位 - 修复：使用double类型
+                        gyroX_dps = (double(gyroX_int) / 32768) * gyro_range;
+                        gyroY_dps = (double(gyroY_int) / 32768) * gyro_range;
+                        gyroZ_dps = (double(gyroZ_int) / 32768) * gyro_range;
+                        accelX_g = (double(accelX_int) / 32768) * accel_range;
+                        accelY_g = (double(accelY_int) / 32768) * accel_range;
+                        accelZ_g = (double(accelZ_int) / 32768) * accel_range;
+                        
+                        fprintf('%d\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\t\t%s\t%.2f\n', ...
+                            i, ...
+                            gyroX_hex, gyroX_dps, ...
+                            gyroY_hex, gyroY_dps, ...
+                            gyroZ_hex, gyroZ_dps, ...
+                            accelX_hex, accelX_g, ...
+                            accelY_hex, accelY_g, ...
+                            accelZ_hex, accelZ_g);
                     
                     % 显示当前动态零偏估计值
                     if i > 1
                         fprintf('动态零偏估计: X=%.2f, Y=%.2f, Z=%.2f\n', ...
                             dynamic_bias_gyroX, dynamic_bias_gyroY, dynamic_bias_gyroZ);
                     end
-                    
-                    % === 新增：显示融合状态 ===
-                    if i <= convergence_samples || mod(i, 20) == 0
-                        fprintf('融合状态: Pitch=%.1f°, Roll=%.1f°, Accel权重=%.2f\n', ...
-                            pitchAngles(i), rollAngles(i), accel_weight);
-                    end
-                    % =======================
                 end
                 
                 % 更新位移显示
@@ -338,28 +319,54 @@ function main()
                 
                 % 更新姿态显示（每10个点更新一次以提高性能）
                 if mod(i, 10) == 0 || i == 1
-                    % 使用第一次调用calculateAttitude的结果
-                    currentPitch = accPitchAngles(i);
-                    currentRoll = accRollAngles(i);
-                    
-                    % 显示互补滤波融合后的角度
-                    displayPitch = pitchAngles(i);
-                    displayRoll = rollAngles(i);
-                    displayYaw = 0; % yaw角度固定为0
-
-                    % 调试输出
-                    fprintf('姿态角 - 加速度计: pitch=%.1f°, roll=%.1f° | 融合后: pitch=%.1f°, roll=%.1f°\n', ...
-                        currentPitch, currentRoll, displayPitch, displayRoll);
+                        % % 计算当前的角度值
+                        % ax_temp = double(accelXData(i));  % 确保转换为double
+                        % ay_temp = double(accelYData(i));
+                        % az_temp = double(accelZData(i));
+                        % 
+                        % % 通过加速度计计算俯仰角和滚转角
+                        % ax_g = (ax_temp / 32768) * accel_range;
+                        % ay_g = (ay_temp / 32768) * accel_range;
+                        % az_g = (az_temp / 32768) * accel_range;
+                        % 
+                        % pitch = atan2(ay_g, sqrt(ax_g^2 + az_g^2)) * 180/pi;
+                        % roll = atan2(-ax_g, sqrt(ay_g^2 + az_g^2)) * 180/pi;
+                        % yaw = 0; % 偏航角需要磁力计或陀螺仪积分
+                                if mod(i, 10) == 0 || i == 1
+                % 使用 calculateAttitude 函数计算姿态角
+                [currentPitch, currentRoll] = calculateAttitude(...
+                    double(accelXData(i)), double(accelYData(i)), double(accelZData(i)), accel_range);
+                
+                % 可以选择显示哪种角度：
+                % 选项1：显示原始加速度计角度
+                % displayPitch = currentPitch;
+                % displayRoll = currentRoll;
+                
+                % 选项2：显示互补滤波融合后的角度（推荐）
+                displayPitch = pitchAngles(i);
+                displayRoll = rollAngles(i);
+                displayYaw = yawAngles(i);
+                
+                % 调试输出
+                fprintf('姿态角 - 加速度计: pitch=%.1f°, roll=%.1f° | 融合后: pitch=%.1f°, roll=%.1f°, yaw=%.1f°\n', ...
+                    currentPitch, currentRoll, displayPitch, displayRoll, displayYaw);
 
                     updateAttitudeDisplay(attitudeQuiver, attitudeText, attitudeSphere, ...
                         double(accelXData(i)), double(accelYData(i)), double(accelZData(i)), ...
-                        gyroXCompensated(i), gyroYCompensated(i), gyroZCompensated(i), attitudeAxes, accel_range, gyro_range, displayPitch, displayRoll, displayYaw);
+                        gyroXCompensated(i), gyroYCompensated(i), gyroZCompensated(i), attitudeAxes, accel_range, gyro_range, pitchAngles(i), rollAngles(i), yawAngles(i));
                 end
                 
                 % 更新调试图表
+                %if i > 1
                 if mod(i, 10) == 0 || i == 1
+                    % 计算线性加速度、速度和位移用于调试
+                    % updateDebugDisplay(debugHandles, i, accelXData, accelYData, accelZData, ...
+                    %     pitchAngles, rollAngles, displacementX, displacementY, displacementZ, ...
+                    %     dt, accel_range);
                     updateDebugDisplay(debugHandles, i, debugData, displacementX, displacementY, displacementZ);
                 end
+                
+                %drawnow limitrate; % 限制更新频率以提高性能
                 
                 % 检查下一帧的同步字节
                 nextBytes = fread(s, 2, 'uint8');
@@ -383,6 +390,7 @@ function main()
                 
             catch ME
                 warning('数据读取错误: %s', ME.message);
+                %fprintf('数据读取错误: %s\n', ME.message);
                 % 尝试重新同步
                 syncFound = false;
                 while ~syncFound
@@ -408,76 +416,4 @@ function main()
     
     fclose(s); % 关闭串口连接
     delete(s); % 删除串口对象
-end
-
-%%
-% === 修正：自适应传感器融合函数，确保角度在0-360°范围内 ===
-function [fusedPitch, fusedRoll, accel_weight] = adaptiveSensorFusion(...
-        accPitch, accRoll, gyroX_dps, gyroY_dps, ...
-        prevPitch, prevRoll, dt, i, convergence_samples, ...
-        accel_magnitude, motion_threshold)
-    
-    % 计算当前窗口的加速度计方差（用于运动检测）
-    window_start = max(1, i-4); % 使用5个点的窗口
-    current_window = accel_magnitude(window_start:i);
-    accel_variance = var(current_window);
-    
-    % 动态调整权重
-    if i <= convergence_samples
-        % 收敛阶段：快速收敛策略
-        convergence_factor = (i-1) / convergence_samples;
-        accel_weight = 1.0 - 0.8 * convergence_factor; % 从1.0线性降到0.2
-        gyro_weight = 1.0 - accel_weight;
-        
-        % 在收敛初期使用更强的加速度计权重
-        if i <= round(convergence_samples * 0.3)
-            accel_weight = max(accel_weight, 0.7);
-            gyro_weight = 1.0 - accel_weight;
-        end
-    else
-        % 稳定阶段：基于运动状态自适应
-        if accel_variance < motion_threshold
-            % 静止状态：更信任加速度计（修正陀螺漂移）
-            accel_weight = 0.4;
-            gyro_weight = 0.6;
-        else
-            % 运动状态：更信任陀螺仪（避免加速度干扰）
-            accel_weight = 0.1;
-            gyro_weight = 0.9;
-        end
-    end
-    
-    % 使用陀螺仪积分得到当前角度
-    gyro_pitch = prevPitch + gyroX_dps * dt;
-    gyro_roll = prevRoll + gyroY_dps * dt;
-    
-    % 使用互补滤波融合
-    fusedPitch = gyro_weight * gyro_pitch + accel_weight * accPitch;
-    fusedRoll = gyro_weight * gyro_roll + accel_weight * accRoll;
-    
-    % === 修正：确保融合角度在0-360°范围内 ===
-    % 使用模运算确保角度在0-360°之间
-    fusedPitch = mod(fusedPitch, 360);
-    fusedRoll = mod(fusedRoll, 360);
-    
-    % 处理角度跨越0°边界的情况，确保平滑过渡
-    if abs(fusedPitch - prevPitch) > 180
-        if fusedPitch > prevPitch
-            fusedPitch = fusedPitch - 360;
-        else
-            fusedPitch = fusedPitch + 360;
-        end
-    end
-    
-    if abs(fusedRoll - prevRoll) > 180
-        if fusedRoll > prevRoll
-            fusedRoll = fusedRoll - 360;
-        else
-            fusedRoll = fusedRoll + 360;
-        end
-    end
-    
-    % 再次确保角度在0-360°范围内
-    fusedPitch = mod(fusedPitch, 360);
-    fusedRoll = mod(fusedRoll, 360);
 end
