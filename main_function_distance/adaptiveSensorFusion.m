@@ -88,8 +88,8 @@ function [fusedPitch, fusedRoll, accel_weight] = adaptiveSensorFusion(...
     end
     
     % === 调试输出 ===
-    if mod(i, 50) == 0
-        fprintf('点 %d: Accel权重=%.2f, 运动水平=%.3f, Pitch: Acc=%.1f, Gyro=%.1f, Fused=%.1f\n', ...
-            i, accel_weight, accel_variance/motion_threshold, accPitch, gyro_pitch, fusedPitch);
-    end
+    % if mod(i, 50) == 0
+    %     fprintf('点 %d: Accel权重=%.2f, 运动水平=%.3f, Pitch: Acc=%.1f, Gyro=%.1f, Fused=%.1f\n', ...
+    %         i, accel_weight, accel_variance/motion_threshold, accPitch, gyro_pitch, fusedPitch);
+    % end
 end

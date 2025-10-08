@@ -90,7 +90,7 @@ function main()
         
         % 静态零偏校准参数
         %calibrationSamples = 200; % 校准采样点数
-        calibrationSamples = 20; % 校准采样点数
+        calibrationSamples = 50; % 校准采样点数
         bias_gyroX = 0;
         bias_gyroY = 0;
         bias_gyroZ = 0;
@@ -380,8 +380,8 @@ function main()
                     
                     % === 新增：显示融合状态 ===
                     if i <= convergence_samples || mod(i, 20) == 0
-                        fprintf('融合状态: Pitch=%.1f°, Roll=%.1f°, Accel权重=%.2f\n', ...
-                            pitchAngles(i), rollAngles(i), accel_weight);
+                        % fprintf('融合状态: Pitch=%.1f°, Roll=%.1f°, Accel权重=%.2f\n', ...
+                        %     pitchAngles(i), rollAngles(i), accel_weight);
                     end
                     % =======================
                 end

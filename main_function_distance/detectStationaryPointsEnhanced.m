@@ -3,7 +3,7 @@ function stationary = detectStationaryPointsEnhanced(accelX, accelY, accelZ, gyr
     stationary = false(n, 1);
     
     % 滑动窗口参数
-    window_size = 5;
+    window_size = 7; % 增大窗口
     
     for i = 1:n
         % 计算滑动窗口
@@ -17,23 +17,27 @@ function stationary = detectStationaryPointsEnhanced(accelX, accelY, accelZ, gyr
         
         accel_var = var(accel_mag_window);
         gyro_mean = mean(gyro_mag_window);
+        gyro_var = var(gyro_mag_window);
         
-        % 严格的静止条件
-        condition1 = accel_var < 0.01 * G;      % 加速度变化很小
-        condition2 = gyro_mean < 1.0;           % 角速度很小
-        condition3 = abs(mean(accel_mag_window) - G) < 0.05 * G; % 接近重力
+        % === 更严格的静止条件 ===
+        condition1 = accel_var < 0.02 * G;      % 加速度方差
+        condition2 = gyro_mean < 2.0;           % 角速度均值
+        condition3 = gyro_var < 1.0;            % 新增：角速度方差
+        condition4 = abs(mean(accel_mag_window) - G) < 0.08 * G; % 接近重力
         
-        % 附加条件：检查加速度变化率
+        % 检查加速度变化率
         if i > 1
             accel_change = sqrt((accelX(i)-accelX(i-1))^2 + (accelY(i)-accelY(i-1))^2 + (accelZ(i)-accelZ(i-1))^2);
-            condition4 = accel_change < 0.05 * G;
+            condition5 = accel_change < 0.08 * G;
         else
-            condition4 = true;
+            condition5 = true;
         end
         
-        stationary(i) = condition1 && condition2 && condition3 && condition4;
+        % 需要满足大部分条件
+        conditions = [condition1, condition2, condition3, condition4, condition5];
+        stationary(i) = sum(conditions) >= 4; % 5个条件中至少满足4个
     end
     
-    % 形态学处理：去除孤立的静止点
-    stationary = morphologicalCleanEnhanced(stationary, 3);
+    % 加强形态学处理
+    stationary = morphologicalCleanEnhanced(stationary, 5); % 增大窗口
 end
