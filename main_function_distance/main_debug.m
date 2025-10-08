@@ -18,8 +18,8 @@ function main()
     convergence_samples = round(convergence_time * fs); % 收敛所需采样点数
     
     % 运动状态检测参数
-    motion_threshold = 0.1;     % 运动检测阈值(G)
-    stationary_threshold = 0.02; % 静止检测阈值(G)
+    motion_threshold = 0.15;     % 运动检测阈值(G)
+    stationary_threshold = 0.05; % 静止检测阈值(G)
     
     % 初始化自适应权重
     accel_weight = 1.0;         % 初始阶段更信任加速度计
@@ -52,10 +52,22 @@ function main()
         accelYData = zeros(1, maxPoints, 'int16');
         accelZData = zeros(1, maxPoints, 'int16');
         
-        % 位移数据
+        % 位移数据 - 窗口模式
         displacementX = zeros(1, maxPoints);
         displacementY = zeros(1, maxPoints);
         displacementZ = zeros(1, maxPoints);
+        
+        % === 新增：连续位移数据 ===
+        continuous_displacementX = zeros(1, maxPoints);
+        continuous_displacementY = zeros(1, maxPoints);
+        continuous_displacementZ = zeros(1, maxPoints);
+        continuous_linAccelX = zeros(1, maxPoints);
+        continuous_linAccelY = zeros(1, maxPoints);
+        continuous_linAccelZ = zeros(1, maxPoints);
+        continuous_velX = zeros(1, maxPoints);
+        continuous_velY = zeros(1, maxPoints);
+        continuous_velZ = zeros(1, maxPoints);
+        % =========================
         
         % 姿态角度数据
         pitchAngles = zeros(1, maxPoints);
@@ -77,7 +89,8 @@ function main()
         dynamic_bias_gyroZ = 0;
         
         % 静态零偏校准参数
-        calibrationSamples = 200; % 校准采样点数
+        %calibrationSamples = 200; % 校准采样点数
+        calibrationSamples = 20; % 校准采样点数
         bias_gyroX = 0;
         bias_gyroY = 0;
         bias_gyroZ = 0;
@@ -262,7 +275,7 @@ function main()
                     window_count = window_count + 1;
                 end
                 
-                % 计算位移（当前5秒窗口内）
+                % === 修改：计算位移（当前5秒窗口内）===
                 if i > current_window_start
                     window_indices = current_window_start:i;
                     [displacementX(i), displacementY(i), displacementZ(i), linAccelX_debug, linAccelY_debug, linAccelZ_debug, velX_debug, velY_debug, velZ_debug] = ...
@@ -275,7 +288,7 @@ function main()
                         double(gyroZCompensated(window_indices)), ...
                         pitchAngles(window_indices), ...
                         rollAngles(window_indices), ...
-                        dt, accel_range, gyro_range, window_count);
+                        dt, accel_range, gyro_range);
 
                     % 存储调试数据
                     debugData.linAccelX(i) = linAccelX_debug(end);
@@ -298,6 +311,47 @@ function main()
                     debugData.velY(i) = 0;
                     debugData.velZ(i) = 0;
                 end
+                
+                % === 修改：计算连续位移（返回完整数组）===
+                if i > 1
+                    % 构建从开始到当前点的所有数据索引
+                    continuous_indices = 1:i;
+                    
+                    [continuous_displacementX(i), continuous_displacementY(i), continuous_displacementZ(i), ...
+                     continuous_linAccelX_temp, continuous_linAccelY_temp, continuous_linAccelZ_temp, ...
+                     continuous_velX_temp, continuous_velY_temp, continuous_velZ_temp] = ...
+                        calculateContinuousDisplacement(...
+                        double(accelXData(continuous_indices)), ...
+                        double(accelYData(continuous_indices)), ...
+                        double(accelZData(continuous_indices)), ...
+                        double(gyroXCompensated(continuous_indices)), ...
+                        double(gyroYCompensated(continuous_indices)), ...
+                        double(gyroZCompensated(continuous_indices)), ...
+                        pitchAngles(continuous_indices), ...
+                        rollAngles(continuous_indices), ...
+                        dt, accel_range, gyro_range, i);
+                    
+                    % === 修改：存储完整的连续计算结果 ===
+                    % 注意：返回的数组长度等于i，需要存储到对应的位置
+                    continuous_linAccelX(1:i) = continuous_linAccelX_temp;
+                    continuous_linAccelY(1:i) = continuous_linAccelY_temp;
+                    continuous_linAccelZ(1:i) = continuous_linAccelZ_temp;
+                    continuous_velX(1:i) = continuous_velX_temp;
+                    continuous_velY(1:i) = continuous_velY_temp;
+                    continuous_velZ(1:i) = continuous_velZ_temp;
+                else
+                    % 第一个点，位移为0
+                    continuous_displacementX(i) = 0;
+                    continuous_displacementY(i) = 0;
+                    continuous_displacementZ(i) = 0;
+                    continuous_linAccelX(i) = 0;
+                    continuous_linAccelY(i) = 0;
+                    continuous_linAccelZ(i) = 0;
+                    continuous_velX(i) = 0;
+                    continuous_velY(i) = 0;
+                    continuous_velZ(i) = 0;
+                end
+                % ===================================================
                 
                 % 每10个采样点输出一次数据
                 if mod(i, 10) == 0 || i == 1
@@ -332,9 +386,11 @@ function main()
                     % =======================
                 end
                 
-                % 更新位移显示
-                updateDisplacementDisplay(h_displacement, h_displacement_text, ...
-                    displacementX, displacementY, displacementZ, i, displacementAxes, current_window_start, window_count);
+                % % 更新位移显示（窗口模式）（每10个点更新一次以提高性能）
+                if mod(i, 10) == 0 || i == 1
+                    updateDisplacementDisplay(h_displacement, h_displacement_text, ...
+                        displacementX, displacementY, displacementZ, i, displacementAxes, current_window_start, window_count);
+                end
                 
                 % 更新姿态显示（每10个点更新一次以提高性能）
                 if mod(i, 10) == 0 || i == 1
@@ -356,9 +412,22 @@ function main()
                         gyroXCompensated(i), gyroYCompensated(i), gyroZCompensated(i), attitudeAxes, accel_range, gyro_range, displayPitch, displayRoll, displayYaw);
                 end
                 
-                % 更新调试图表
+                % === 修改：更新调试图表，添加所有连续数据 ===
                 if mod(i, 10) == 0 || i == 1
-                    updateDebugDisplay(debugHandles, i, debugData, displacementX, displacementY, displacementZ);
+                    updateDebugDisplay(debugHandles, i, debugData, displacementX, displacementY, displacementZ, ...
+                        continuous_displacementX, continuous_displacementY, continuous_displacementZ, ...
+                        continuous_linAccelX, continuous_linAccelY, continuous_linAccelZ, ...
+                        continuous_velX, continuous_velY, continuous_velZ);
+                    % continuous_displacementX(i) = 0;
+                    % continuous_displacementY(i) = 0;
+                    % continuous_displacementZ(i) = 0;
+                    % continuous_linAccelX(i) = 0;
+                    % continuous_linAccelY(i) = 0;
+                    % continuous_linAccelZ(i) = 0;
+                    % continuous_velX(i) = 0;
+                    % continuous_velY(i) = 0;
+                    % continuous_velZ(i) = 0;
+
                 end
                 
                 % 检查下一帧的同步字节
@@ -404,80 +473,16 @@ function main()
         
         % 数据采集完成后，显示完成信息
         fprintf('\n数据采集完成\n');
+        
+        % === 新增：显示最终位移结果 ===
+        fprintf('\n=== 最终位移结果 ===\n');
+        fprintf('窗口模式 - 总位移: X=%.3fm, Y=%.3fm, Z=%.3fm\n', ...
+            displacementX(end), displacementY(end), displacementZ(end));
+        fprintf('连续模式 - 总位移: X=%.3fm, Y=%.3fm, Z=%.3fm\n', ...
+            continuous_displacementX(end), continuous_displacementY(end), continuous_displacementZ(end));
+        fprintf('==================\n');
     end
     
     fclose(s); % 关闭串口连接
     delete(s); % 删除串口对象
-end
-
-%%
-% === 修正：自适应传感器融合函数，确保角度在0-360°范围内 ===
-function [fusedPitch, fusedRoll, accel_weight] = adaptiveSensorFusion(...
-        accPitch, accRoll, gyroX_dps, gyroY_dps, ...
-        prevPitch, prevRoll, dt, i, convergence_samples, ...
-        accel_magnitude, motion_threshold)
-    
-    % 计算当前窗口的加速度计方差（用于运动检测）
-    window_start = max(1, i-4); % 使用5个点的窗口
-    current_window = accel_magnitude(window_start:i);
-    accel_variance = var(current_window);
-    
-    % 动态调整权重
-    if i <= convergence_samples
-        % 收敛阶段：快速收敛策略
-        convergence_factor = (i-1) / convergence_samples;
-        accel_weight = 1.0 - 0.8 * convergence_factor; % 从1.0线性降到0.2
-        gyro_weight = 1.0 - accel_weight;
-        
-        % 在收敛初期使用更强的加速度计权重
-        if i <= round(convergence_samples * 0.3)
-            accel_weight = max(accel_weight, 0.7);
-            gyro_weight = 1.0 - accel_weight;
-        end
-    else
-        % 稳定阶段：基于运动状态自适应
-        if accel_variance < motion_threshold
-            % 静止状态：更信任加速度计（修正陀螺漂移）
-            accel_weight = 0.4;
-            gyro_weight = 0.6;
-        else
-            % 运动状态：更信任陀螺仪（避免加速度干扰）
-            accel_weight = 0.1;
-            gyro_weight = 0.9;
-        end
-    end
-    
-    % 使用陀螺仪积分得到当前角度
-    gyro_pitch = prevPitch + gyroX_dps * dt;
-    gyro_roll = prevRoll + gyroY_dps * dt;
-    
-    % 使用互补滤波融合
-    fusedPitch = gyro_weight * gyro_pitch + accel_weight * accPitch;
-    fusedRoll = gyro_weight * gyro_roll + accel_weight * accRoll;
-    
-    % === 修正：确保融合角度在0-360°范围内 ===
-    % 使用模运算确保角度在0-360°之间
-    fusedPitch = mod(fusedPitch, 360);
-    fusedRoll = mod(fusedRoll, 360);
-    
-    % 处理角度跨越0°边界的情况，确保平滑过渡
-    if abs(fusedPitch - prevPitch) > 180
-        if fusedPitch > prevPitch
-            fusedPitch = fusedPitch - 360;
-        else
-            fusedPitch = fusedPitch + 360;
-        end
-    end
-    
-    if abs(fusedRoll - prevRoll) > 180
-        if fusedRoll > prevRoll
-            fusedRoll = fusedRoll - 360;
-        else
-            fusedRoll = fusedRoll + 360;
-        end
-    end
-    
-    % 再次确保角度在0-360°范围内
-    fusedPitch = mod(fusedPitch, 360);
-    fusedRoll = mod(fusedRoll, 360);
 end

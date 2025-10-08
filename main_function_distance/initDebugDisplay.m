@@ -1,50 +1,84 @@
 function [debugFig, debugHandles] = initDebugDisplay()
-    % 创建调试图表窗口
-    debugFig = figure('Position', [100, 100, 1200, 800], 'Name', '传感器数据调试');
+    % 初始化调试显示 - 2行3列布局（窗口模式 vs 连续模式）
     
-    % 线性加速度子图
-    subplot(3,1,1);
-    h_accel_x = plot(NaN, NaN, 'r-');
+    debugFig = figure('Position', [100, 100, 1400, 800], 'Name', 'IMU调试信息 - 窗口模式 vs 连续模式');
+    
+    % === 第一行：窗口模式数据 ===
+    
+    % 窗口模式加速度
+    debugHandles.window_accel_axes = subplot(2, 3, 1);
     hold on;
-    h_accel_y = plot(NaN, NaN, 'g-');
-    h_accel_z = plot(NaN, NaN, 'b-');
-    title('线性加速度 (m/s²)');
-    legend('X', 'Y', 'Z');
+    debugHandles.window_accel_x = plot(0, 0, 'r-', 'LineWidth', 1.5, 'DisplayName', 'X');
+    debugHandles.window_accel_y = plot(0, 0, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Y');
+    debugHandles.window_accel_z = plot(0, 0, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Z');
+    title('窗口模式加速度 (m/s²)');
+    xlabel('采样点');
+    ylabel('加速度 (m/s²)');
     grid on;
+    legend('show');
     
-    % 速度子图
-    subplot(3,1,2);
-    h_velocity_x = plot(NaN, NaN, 'r-');
+    % 窗口模式速度
+    debugHandles.window_velocity_axes = subplot(2, 3, 2);
     hold on;
-    h_velocity_y = plot(NaN, NaN, 'g-');
-    h_velocity_z = plot(NaN, NaN, 'b-');
-    title('速度 (m/s)');
-    legend('X', 'Y', 'Z');
+    debugHandles.window_velocity_x = plot(0, 0, 'r-', 'LineWidth', 1.5, 'DisplayName', 'X');
+    debugHandles.window_velocity_y = plot(0, 0, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Y');
+    debugHandles.window_velocity_z = plot(0, 0, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Z');
+    title('窗口模式速度 (m/s)');
+    xlabel('采样点');
+    ylabel('速度 (m/s)');
     grid on;
+    legend('show');
     
-    % 位移子图
-    subplot(3,1,3);
-    h_displacement_x = plot(NaN, NaN, 'r-');
+    % 窗口模式位移
+    debugHandles.window_displacement_axes = subplot(2, 3, 3);
     hold on;
-    h_displacement_y = plot(NaN, NaN, 'g-');
-    h_displacement_z = plot(NaN, NaN, 'b-');
-    title('位移 (m)');
-    legend('X', 'Y', 'Z');
+    debugHandles.window_displacement_x = plot(0, 0, 'r-', 'LineWidth', 1.5, 'DisplayName', 'X');
+    debugHandles.window_displacement_y = plot(0, 0, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Y');
+    debugHandles.window_displacement_z = plot(0, 0, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Z');
+    title('窗口模式位移 (m)');
+    xlabel('采样点');
+    ylabel('位移 (m)');
     grid on;
+    legend('show');
     
-    % 将所有句柄存储在结构体中便于返回
-    debugHandles.h_accel_x = h_accel_x;
-    debugHandles.h_accel_y = h_accel_y;
-    debugHandles.h_accel_z = h_accel_z;
-    debugHandles.h_velocity_x = h_velocity_x;
-    debugHandles.h_velocity_y = h_velocity_y;
-    debugHandles.h_velocity_z = h_velocity_z;
-    debugHandles.h_displacement_x = h_displacement_x;
-    debugHandles.h_displacement_y = h_displacement_y;
-    debugHandles.h_displacement_z = h_displacement_z;
-
-        % 保存坐标轴句柄以便后续控制
-    debugHandles.ax_accel = subplot(3,1,1);
-    debugHandles.ax_velocity = subplot(3,1,2);
-    debugHandles.ax_displacement = subplot(3,1,3);
+    % === 第二行：连续模式数据 ===
+    
+    % 连续模式加速度
+    debugHandles.continuous_accel_axes = subplot(2, 3, 4);
+    hold on;
+    debugHandles.continuous_accel_x = plot(0, 0, 'r-', 'LineWidth', 1.5, 'DisplayName', 'X');
+    debugHandles.continuous_accel_y = plot(0, 0, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Y');
+    debugHandles.continuous_accel_z = plot(0, 0, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Z');
+    title('连续模式加速度 (m/s²)');
+    xlabel('采样点');
+    ylabel('加速度 (m/s²)');
+    grid on;
+    legend('show');
+    
+    % 连续模式速度
+    debugHandles.continuous_velocity_axes = subplot(2, 3, 5);
+    hold on;
+    debugHandles.continuous_velocity_x = plot(0, 0, 'r-', 'LineWidth', 1.5, 'DisplayName', 'X');
+    debugHandles.continuous_velocity_y = plot(0, 0, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Y');
+    debugHandles.continuous_velocity_z = plot(0, 0, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Z');
+    title('连续模式速度 (m/s)');
+    xlabel('采样点');
+    ylabel('速度 (m/s)');
+    grid on;
+    legend('show');
+    
+    % 连续模式位移
+    debugHandles.continuous_displacement_axes = subplot(2, 3, 6);
+    hold on;
+    debugHandles.continuous_displacement_x = plot(0, 0, 'r-', 'LineWidth', 1.5, 'DisplayName', 'X');
+    debugHandles.continuous_displacement_y = plot(0, 0, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Y');
+    debugHandles.continuous_displacement_z = plot(0, 0, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Z');
+    title('连续模式位移 (m)');
+    xlabel('采样点');
+    ylabel('位移 (m)');
+    grid on;
+    legend('show');
+    
+    % 调整子图间距
+    set(debugFig, 'Color', 'white');
 end
