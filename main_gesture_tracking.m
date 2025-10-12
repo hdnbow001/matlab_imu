@@ -266,8 +266,8 @@ function main()
                     end
                 end
                 
-                % 更新姿态显示（每10个点更新一次以提高性能）
-                if mod(i, 10) == 0 || i == 1
+                % 更新姿态显示（每5个点更新一次以提高性能）
+                if mod(i, 5) == 0 || i == 1
                     % 显示互补滤波融合后的角度
                     displayPitch = pitchAngles(i);
                     displayRoll = rollAngles(i);

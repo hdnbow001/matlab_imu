@@ -1,4 +1,4 @@
-function processed_trajectory = postProcessTrajectory(raw_trajectory, active_indices)
+function processed_trajectory = postProcessTrajectory_(raw_trajectory, active_indices)
     % 轨迹后处理以减少积分误差
     
     [dim, N] = size(raw_trajectory);
