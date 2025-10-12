@@ -1,9 +1,14 @@
+% 基于现有主循环扩展手势跟踪功能
+    % 现有数据流:串口数据 → 传感器解析 → 姿态计算 → 姿态显示
+    % 新增手势跟踪数据流:传感器数据 → 手势检测 → 轨迹计算 → 轨迹显示/识别
+%%
 function main()
     % 参数设置
-    fs = 20;   % 采样率 10Hz
-    T = 50;   % 时宽 (100秒)
+    fs = 20;   % 采样率 20Hz
+    T = 50;   % 时宽 (50秒)
     n = round(T*fs);  % 采样点个数 (1000个)
-    s = serial('COM7'); % 创建串口对象
+    %s = serial('COM7'); % uih开发机创建串口对象
+    s = serial('COM3'); % hd开发机创建串口对象
     set(s, 'BaudRate', 115200); % 设置波特率
     
     % 传感器参数
@@ -19,6 +24,10 @@ function main()
     % 运动状态检测参数
     motion_threshold = 0.15;     % 运动检测阈值(G)
     stationary_threshold = 0.05; % 静止检测阈值(G)
+    
+    % === 新增：手势跟踪参数 ===
+    gesture_threshold = 0.3;     % 手势检测阈值(G)
+    gesture_buffer_size = 50;    % 手势数据缓冲区大小（2.5秒数据）
     
     % 初始化自适应权重
     accel_weight = 1.0;         % 初始阶段更信任加速度计
@@ -61,6 +70,15 @@ function main()
         % 加速度计矢量幅值（用于运动检测）
         accel_magnitude = zeros(1, maxPoints);
         
+        % === 新增：手势跟踪数据存储 ===
+        gesture_trajectory_x = zeros(1, maxPoints);
+        gesture_trajectory_y = zeros(1, maxPoints);
+        gesture_trajectory_z = zeros(1, maxPoints);
+        is_gesture_active = false(1, maxPoints);
+        gesture_velocity_x = zeros(1, maxPoints);
+        gesture_velocity_y = zeros(1, maxPoints);
+        gesture_velocity_z = zeros(1, maxPoints);
+        
         % 动态零偏估计参数
         alpha = 0.001; % 滤波系数
         dynamic_bias_gyroX = 0;
@@ -74,13 +92,30 @@ function main()
         fusedPitch = 0; % 融合后的俯仰角
         fusedRoll = 0;  % 融合后的滚转角
         
-        % 创建图形窗口 - 只保留姿态显示
-        fig = figure('Position', [50, 50, 800, 600], 'Name', 'IMU传感器姿态显示');
+        % 创建图形窗口 - 姿态显示和手势跟踪
+        fig = figure('Position', [50, 50, 1200, 600], 'Name', 'IMU传感器姿态与手势跟踪');
         
         % 姿态显示子图
-        attitude_subplot = subplot(1, 1, 1);
+        attitude_subplot = subplot(1, 2, 1);
         % 初始化姿态显示
         [attitudeQuiver, attitudeText, attitudeSphere, attitudeAxes] = initAttitudeDisplay(attitude_subplot);
+        
+        % === 新增：手势轨迹显示子图 ===
+        gesture_subplot = subplot(1, 2, 2);
+        title(gesture_subplot, '实时手势轨迹');
+        xlabel(gesture_subplot, 'X (m)'); 
+        ylabel(gesture_subplot, 'Y (m)'); 
+        zlabel(gesture_subplot, 'Z (m)');
+        grid(gesture_subplot, 'on'); 
+        hold(gesture_subplot, 'on');
+        axis(gesture_subplot, 'equal');
+        view(gesture_subplot, 3);
+        
+        % 初始化手势轨迹图形对象
+        gesture_trajectory_plot = plot3(gesture_subplot, 0, 0, 0, 'b-', 'LineWidth', 2);
+        gesture_points_plot = scatter3(gesture_subplot, 0, 0, 0, 20, 'filled', 'r');
+        gesture_start_plot = plot3(gesture_subplot, 0, 0, 0, 'go', 'MarkerSize', 8, 'MarkerFaceColor', 'g');
+        gesture_end_plot = plot3(gesture_subplot, 0, 0, 0, 'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r');
         
         % 帧同步
         syncBytes = [170, 85]; % AA 55
@@ -152,26 +187,80 @@ function main()
                 accPitchAngles(i) = accPitch;
                 accRollAngles(i) = accRoll;
                 
-                % 使用自适应互补滤波融合姿态
+                % === 修改：使用方案3的陀螺仪辅助姿态稳定 ===
                 if i == 1
                     % 初始化融合角度
-                    fusedPitch = accPitch;
-                    fusedRoll = accRoll;
+                    pitchAngles(i) = accPitch;
+                    rollAngles(i) = accRoll;
                 else
                     % 将陀螺仪数据转换为度/秒
                     gyroX_dps = (double(gyroXCompensated(i)) / 32768) * gyro_range;
                     gyroY_dps = (double(gyroYCompensated(i)) / 32768) * gyro_range;
                     
-                    % 调用自适应传感器融合函数
-                    [fusedPitch, fusedRoll, accel_weight] = adaptiveSensorFusion(...
-                        accPitch, accRoll, gyroX_dps, gyroY_dps, ...
-                        fusedPitch, fusedRoll, dt, i, convergence_samples, ...
-                        accel_magnitude, motion_threshold);
+                    % 陀螺仪积分预测
+                    gyro_pitch = pitchAngles(i-1) + gyroY_dps * dt;
+                    gyro_roll = rollAngles(i-1) + gyroX_dps * dt;
+                    
+                    % 检测线性运动
+                    accel_magnitude_current = sqrt(double(accelXData(i))^2 + ...
+                                                  double(accelYData(i))^2 + ...
+                                                  double(accelZData(i))^2);
+                    gravity_deviation = abs(accel_magnitude_current - 1.0);
+                    is_linear_motion = gravity_deviation > 0.3; % 阈值可调
+                    
+                    if is_linear_motion
+                        % 线性运动期间，更信任陀螺仪
+                        fusion_alpha = 0.8; % 陀螺仪权重
+                        % 调试输出
+                        if mod(i, 25) == 0
+                            fprintf('线性运动检测: 偏差=%.3fG, 使用陀螺仪为主(权重=%.1f)\n', ...
+                                    gravity_deviation, fusion_alpha);
+                        end
+                    else
+                        % 静止状态，信任加速度计
+                        fusion_alpha = 0.2; % 陀螺仪权重
+                    end
+                    
+                    % 融合加速度计和陀螺仪
+                    pitchAngles(i) = fusion_alpha * gyro_pitch + (1-fusion_alpha) * accPitch;
+                    rollAngles(i) = fusion_alpha * gyro_roll + (1-fusion_alpha) * accRoll;
+                    
+                    % 确保角度在0-360°范围内
+                    pitchAngles(i) = mod(pitchAngles(i), 360);
+                    rollAngles(i) = mod(rollAngles(i), 360);
                 end
                 
-                % 确保融合后的角度在0-360°范围内
-                pitchAngles(i) = mod(fusedPitch, 360);
-                rollAngles(i) = mod(fusedRoll, 360);
+                % === 修复：手势跟踪处理（确保数据类型正确）===
+                if i > 1
+                    % 确定数据缓冲区范围
+                    buffer_start = max(1, i - gesture_buffer_size + 1);
+                    buffer_indices = buffer_start:i;
+                    
+                    % 提取缓冲区数据并确保为double类型
+                    accel_buffer = double([accelXData(buffer_indices); 
+                                           accelYData(buffer_indices);
+                                           accelZData(buffer_indices)]);
+                    gyro_buffer = double([gyroXCompensated(buffer_indices);
+                                          gyroYCompensated(buffer_indices); 
+                                          gyroZCompensated(buffer_indices)]);
+                    pitch_buffer = double(pitchAngles(buffer_indices));
+                    roll_buffer = double(rollAngles(buffer_indices));
+                    
+                    % 执行手势跟踪
+                    [trajectory, velocity, active] = trackGesture(...
+                        accel_buffer, gyro_buffer, pitch_buffer, roll_buffer, dt, gesture_threshold);
+                    
+                    % 存储结果（只取最新点）
+                    if ~isempty(trajectory) && ~isempty(velocity) && ~isempty(active)
+                        gesture_trajectory_x(i) = trajectory(1, end);
+                        gesture_trajectory_y(i) = trajectory(2, end);
+                        gesture_trajectory_z(i) = trajectory(3, end);
+                        gesture_velocity_x(i) = velocity(1, end);
+                        gesture_velocity_y(i) = velocity(2, end);
+                        gesture_velocity_z(i) = velocity(3, end);
+                        is_gesture_active(i) = active(end);
+                    end
+                end
                 
                 % 每10个采样点输出一次数据
                 if mod(i, 10) == 0 || i == 1
@@ -199,9 +288,9 @@ function main()
                     end
                 end
                 
-                % 更新姿态显示（每10个点更新一次以提高性能）
-                if mod(i, 10) == 0 || i == 1
-                    % 显示互补滤波融合后的角度
+                % 更新姿态显示（每5个点更新一次以提高性能）
+                if mod(i, 5) == 0 || i == 1
+                    % 显示融合后的角度
                     displayPitch = pitchAngles(i);
                     displayRoll = rollAngles(i);
                     displayYaw = 0; % yaw角度固定为0
@@ -213,6 +302,14 @@ function main()
                     updateAttitudeDisplay(attitudeQuiver, attitudeText, attitudeSphere, ...
                         double(accelXData(i)), double(accelYData(i)), double(accelZData(i)), ...
                         gyroXCompensated(i), gyroYCompensated(i), gyroZCompensated(i), attitudeAxes, accel_range, gyro_range, displayPitch, displayRoll, displayYaw);
+                end
+                
+                % === 新增：更新手势轨迹显示（每5个点更新一次）===
+                if mod(i, 5) == 0 || i == 1
+                    updateGestureDisplay(gesture_trajectory_plot, gesture_points_plot, ...
+                                       gesture_start_plot, gesture_end_plot, ...
+                                       gesture_trajectory_x, gesture_trajectory_y, gesture_trajectory_z, ...
+                                       is_gesture_active, i, gesture_subplot);
                 end
                 
                 % 检查下一帧的同步字节
@@ -251,7 +348,8 @@ function main()
                 end
                 % 重新获取图形句柄
                 fig = gcf;
-                attitude_subplot = subplot(1, 1, 1);
+                attitude_subplot = subplot(1, 2, 1);
+                gesture_subplot = subplot(1, 2, 2);
             end
         end
         
@@ -262,6 +360,23 @@ function main()
         fprintf('\n=== 最终姿态结果 ===\n');
         fprintf('最终俯仰角(Pitch): %.1f°\n', pitchAngles(end));
         fprintf('最终滚转角(Roll): %.1f°\n', rollAngles(end));
+        
+        % === 新增：显示手势统计信息 ===
+        active_gesture_points = sum(is_gesture_active);
+        if active_gesture_points > 0
+            fprintf('\n=== 手势跟踪统计 ===\n');
+            fprintf('检测到手势活动的采样点数: %d/%d\n', active_gesture_points, maxPoints);
+            fprintf('手势活动比例: %.1f%%\n', (active_gesture_points/maxPoints)*100);
+            
+            % 计算最大轨迹范围
+            active_indices = find(is_gesture_active);
+            if length(active_indices) >= 2
+                max_range_x = max(gesture_trajectory_x(active_indices)) - min(gesture_trajectory_x(active_indices));
+                max_range_y = max(gesture_trajectory_y(active_indices)) - min(gesture_trajectory_y(active_indices));
+                max_range_z = max(gesture_trajectory_z(active_indices)) - min(gesture_trajectory_z(active_indices));
+                fprintf('手势轨迹范围: X=%.3fm, Y=%.3fm, Z=%.3fm\n', max_range_x, max_range_y, max_range_z);
+            end
+        end
         fprintf('==================\n');
     end
     
