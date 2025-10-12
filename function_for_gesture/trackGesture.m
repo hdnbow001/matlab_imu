@@ -70,7 +70,7 @@ function [gesture_trajectory, gesture_velocity, is_gesture_active] = ...
         if gyro_magnitude > rotation_threshold
             % 降低旋转期间的线性加速度增益
             %rotation_suppression = 0.3;
-            rotation_suppression = 0.1;
+            rotation_suppression = 0.05;
             linear_accel = linear_accel * rotation_suppression;
         end
         
